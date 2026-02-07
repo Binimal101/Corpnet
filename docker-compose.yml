@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector
+  postgres:
+    image: timescale/timescaledb-ha:pg16-all
+    environment:
+      POSTGRES_USER: dachrag
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: dachrag
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dachrag"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # DAC-HRAG API
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DACHRAG__DATABASE__HOST: postgres
+      DACHRAG__DATABASE__PORT: 5432
+      DACHRAG__DATABASE__NAME: dachrag
+      DACHRAG__DATABASE__USER: dachrag
+      DACHRAG__DATABASE__PASSWORD: password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+    command: ["python", "-m", "uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Super-peer node
+  super-peer:
+    build: .
+    ports:
+      - "50051:50051"
+    environment:
+      DACHRAG__DATABASE__HOST: postgres
+      DACHRAG__NETWORKING__GRPC_PORT: 50051
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "src.api.cli", "peer", "--peer-id", "super-001", "--super-peer"]
+
+  # Leaf peer node
+  leaf-peer:
+    build: .
+    ports:
+      - "50052:50051"
+    environment:
+      DACHRAG__DATABASE__HOST: postgres
+      DACHRAG__NETWORKING__GRPC_PORT: 50051
+      DACHRAG__NETWORKING__COORDINATOR_ADDRESS: super-peer:50051
+    depends_on:
+      - super-peer
+    command: ["python", "-m", "src.api.cli", "peer", "--peer-id", "leaf-001"]
+
+volumes:
+  postgres_data:

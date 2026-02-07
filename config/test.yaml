@@ -1,0 +1,49 @@
+database:
+  host: localhost
+  port: 5432
+  name: dachrag_test
+  user: dachrag
+  password: password
+  pool_size: 5
+
+embeddings:
+  provider: sentence-transformers
+  model: nomic-ai/nomic-embed-text-v1.5
+  dimension: 768
+  batch_size: 32
+
+llm:
+  provider: local
+  model: mock
+  temperature: 0.0
+  max_tokens: 1024
+
+clustering:
+  leiden_resolution: [1.0, 0.5]
+  min_community_size: 2
+  knn_k: 5
+  knn_threshold: 0.5
+  silhouette_threshold: 0.2
+  max_hierarchy_levels: 3
+
+indexing:
+  ef_search: 32
+  ef_construction: 64
+  num_neighbors: 16
+
+routing:
+  similarity_threshold: 0.35
+  min_communities_per_layer: 1
+  max_communities_per_layer: 10
+  top_k_results: 5
+
+networking:
+  grpc_port: 50051
+  max_peers: 10
+  heartbeat_interval: 10
+  coordinator_address: localhost:50050
+
+maintenance:
+  centroid_update_threshold: 100
+  canary_interval_minutes: 5
+  recluster_cooldown_seconds: 60
