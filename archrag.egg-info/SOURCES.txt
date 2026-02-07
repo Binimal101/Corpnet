@@ -3,6 +3,7 @@ pyproject.toml
 archrag/__init__.py
 archrag/cli.py
 archrag/config.py
+archrag/mcp_server.py
 archrag.egg-info/PKG-INFO
 archrag.egg-info/SOURCES.txt
 archrag.egg-info/dependency_links.txt
@@ -44,8 +45,16 @@ archrag/services/adaptive_filtering.py
 archrag/services/chnsw_build.py
 archrag/services/hierarchical_clustering.py
 archrag/services/hierarchical_search.py
+archrag/services/ingestion_queue.py
 archrag/services/kg_construction.py
 archrag/services/orchestrator.py
+consumer/__init__.py
+consumer/mcp_server.py
+consumer/adapters/__init__.py
+consumer/adapters/stub_store.py
+producer/__init__.py
+producer/api.py
+tests/test_blue_green.py
 tests/test_chnsw.py
 tests/test_clustering.py
 tests/test_filtering.py

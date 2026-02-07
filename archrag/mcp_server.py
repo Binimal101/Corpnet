@@ -119,7 +119,7 @@ def search(
     if search_type in ("chunks", "all"):
         chunks = _orch.search_chunks(query_str)
         if chunks:
-            lines = [f"  {c['id']}: {c['text'][:120]}..." for c in chunks]
+            lines = [f"  {c['id']}: {c['content'][:120]}..." for c in chunks]
             parts.append(f"Chunks ({len(chunks)}):\n" + "\n".join(lines))
         else:
             parts.append(f"No chunks matching '{query_str}'.")

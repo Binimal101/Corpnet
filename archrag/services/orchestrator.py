@@ -87,6 +87,7 @@ class ArchRAGOrchestrator:
         M: int = 32,
         ef_construction: int = 100,
         k_per_layer: int = 5,
+        data_dir: str = "data",
     ):
         # Immutable / shared (stateless services and config)
         self._llm = llm
@@ -100,6 +101,7 @@ class ArchRAGOrchestrator:
         self._M = M
         self._ef_construction = ef_construction
         self._k_per_layer = k_per_layer
+        self._data_dir = data_dir
 
         self._filter_service = AdaptiveFilteringService(llm)
 
@@ -142,6 +144,7 @@ class ArchRAGOrchestrator:
                 self._embedding, vector_index, graph_store, doc_store,
                 M=self._M,
                 ef_construction=self._ef_construction,
+                data_dir=self._data_dir,
             ),
             search_service=HierarchicalSearchService(
                 self._embedding, vector_index, graph_store, doc_store,
@@ -216,7 +219,7 @@ class ArchRAGOrchestrator:
 
         # Load persisted vector index if not already in memory
         if snap.chnsw_index is None:
-            vec_path = Path("data/chnsw_vectors.json")
+            vec_path = Path(self._data_dir) / "chnsw_vectors.json"
             if vec_path.exists():
                 log.info("Loading vector index from %s", vec_path)
                 snap.vector_index.load(str(vec_path))
@@ -300,14 +303,16 @@ class ArchRAGOrchestrator:
         ]
 
     def search_chunks(self, query: str) -> list[dict[str, str]]:
-        """Search chunks by text substring."""
+        """Search chunks by content substring."""
         snap = self._snapshot
         chunks = snap.doc_store.search_chunks(query)
         return [
             {
                 "id": c.id,
-                "text": c.text[:200] + ("..." if len(c.text) > 200 else ""),
-                "source": c.source_doc,
+                "content": c.content[:200] + ("..." if len(c.content) > 200 else ""),
+                "category": c.category,
+                "tags": c.tags,
+                "keywords": c.keywords,
             }
             for c in chunks
         ]

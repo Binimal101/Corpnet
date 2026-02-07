@@ -1,5 +1,8 @@
 # ArchRAG Configuration — OpenAI
 
+# Where persistent data lives (relative to this config file).
+data_dir: data
+
 embedding:
   adapter: openai
   model: text-embedding-3-small

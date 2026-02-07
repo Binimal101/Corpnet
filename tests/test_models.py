@@ -17,14 +17,32 @@ from archrag.domain.models import (
 
 class TestTextChunk:
     def test_creation(self):
-        c = TextChunk(text="hello world", source_doc="doc1")
-        assert c.text == "hello world"
-        assert c.source_doc == "doc1"
+        c = TextChunk(content="hello world", category="general")
+        assert c.content == "hello world"
+        assert c.category == "general"
         assert len(c.id) == 12
+        assert c.keywords == []
+        assert c.tags == []
+        assert c.retrieval_count == 0
+        assert c.embedding is None
 
-    def test_metadata(self):
-        c = TextChunk(text="x", metadata={"page": 1})
-        assert c.metadata["page"] == 1
+    def test_full_fields(self):
+        c = TextChunk(
+            content="x",
+            last_updated="202602071200",
+            keywords=["ai", "ml"],
+            tags=["research"],
+            category="science",
+            retrieval_count=5,
+            embedding_model="text-embedding-3-small",
+            embedding=[0.1, 0.2],
+        )
+        assert c.last_updated == "202602071200"
+        assert c.keywords == ["ai", "ml"]
+        assert c.tags == ["research"]
+        assert c.retrieval_count == 5
+        assert c.embedding_model == "text-embedding-3-small"
+        assert c.embedding == [0.1, 0.2]
 
 
 class TestEntity:

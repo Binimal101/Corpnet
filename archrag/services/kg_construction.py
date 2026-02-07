@@ -119,24 +119,28 @@ class KGConstructionService:
     def _chunk_documents(self, documents: list[dict[str, Any]]) -> list[TextChunk]:
         chunks: list[TextChunk] = []
         for doc in documents:
-            text = doc.get("context", doc.get("text", ""))
-            title = doc.get("title", "")
+            text = doc.get("content", doc.get("context", doc.get("text", "")))
             start = 0
             while start < len(text):
                 end = start + self._chunk_size
                 chunk_text = text[start:end]
                 chunks.append(
                     TextChunk(
-                        text=chunk_text,
-                        source_doc=title,
-                        metadata={"doc_id": doc.get("id", "")},
+                        content=chunk_text,
+                        last_updated=doc.get("last_updated", ""),
+                        keywords=doc.get("keywords", []),
+                        tags=doc.get("tags", []),
+                        category=doc.get("category", ""),
+                        retrieval_count=doc.get("retrieval_count", 0),
+                        embedding_model=doc.get("embedding_model", ""),
+                        embedding=doc.get("embedding"),
                     )
                 )
                 start += self._chunk_size - self._chunk_overlap
         return chunks
 
     def _extract(self, chunk: TextChunk) -> dict[str, Any]:
-        prompt = ENTITY_RELATION_EXTRACTION_PROMPT.format(text=chunk.text)
+        prompt = ENTITY_RELATION_EXTRACTION_PROMPT.format(text=chunk.content)
         try:
             result = self._llm.generate_json(
                 prompt, system=ENTITY_RELATION_EXTRACTION_SYSTEM

@@ -25,10 +25,15 @@ class SQLiteDocumentStore(DocumentStorePort):
         self._conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS chunks (
-                id         TEXT PRIMARY KEY,
-                text       TEXT NOT NULL,
-                source_doc TEXT NOT NULL DEFAULT '',
-                metadata   TEXT NOT NULL DEFAULT '{}'
+                id              TEXT PRIMARY KEY,
+                content         TEXT NOT NULL,
+                last_updated    TEXT NOT NULL DEFAULT '',
+                keywords        TEXT NOT NULL DEFAULT '[]',
+                tags            TEXT NOT NULL DEFAULT '[]',
+                category        TEXT NOT NULL DEFAULT '',
+                retrieval_count INTEGER NOT NULL DEFAULT 0,
+                embedding_model TEXT NOT NULL DEFAULT '',
+                embedding       TEXT
             );
 
             CREATE TABLE IF NOT EXISTS communities (
@@ -53,31 +58,62 @@ class SQLiteDocumentStore(DocumentStorePort):
 
     def save_chunk(self, chunk: TextChunk) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO chunks (id, text, source_doc, metadata) VALUES (?,?,?,?)",
-            (chunk.id, chunk.text, chunk.source_doc, json.dumps(chunk.metadata)),
+            """INSERT OR REPLACE INTO chunks
+               (id, content, last_updated, keywords, tags, category,
+                retrieval_count, embedding_model, embedding)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            self._chunk_row(chunk),
         )
         self._conn.commit()
 
     def save_chunks(self, chunks: list[TextChunk]) -> None:
         self._conn.executemany(
-            "INSERT OR REPLACE INTO chunks (id, text, source_doc, metadata) VALUES (?,?,?,?)",
-            [(c.id, c.text, c.source_doc, json.dumps(c.metadata)) for c in chunks],
+            """INSERT OR REPLACE INTO chunks
+               (id, content, last_updated, keywords, tags, category,
+                retrieval_count, embedding_model, embedding)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            [self._chunk_row(c) for c in chunks],
         )
         self._conn.commit()
+
+    @staticmethod
+    def _chunk_row(c: TextChunk) -> tuple:
+        return (
+            c.id,
+            c.content,
+            c.last_updated,
+            json.dumps(c.keywords),
+            json.dumps(c.tags),
+            c.category,
+            c.retrieval_count,
+            c.embedding_model,
+            json.dumps(c.embedding) if c.embedding else None,
+        )
 
     def get_chunk(self, chunk_id: str) -> TextChunk | None:
         cur = self._conn.execute("SELECT * FROM chunks WHERE id=?", (chunk_id,))
         row = cur.fetchone()
         if not row:
             return None
-        return TextChunk(id=row[0], text=row[1], source_doc=row[2], metadata=json.loads(row[3]))
+        return self._row_to_chunk(row)
 
     def get_all_chunks(self) -> list[TextChunk]:
         cur = self._conn.execute("SELECT * FROM chunks")
-        return [
-            TextChunk(id=r[0], text=r[1], source_doc=r[2], metadata=json.loads(r[3]))
-            for r in cur.fetchall()
-        ]
+        return [self._row_to_chunk(r) for r in cur.fetchall()]
+
+    @staticmethod
+    def _row_to_chunk(r: tuple) -> TextChunk:
+        return TextChunk(
+            id=r[0],
+            content=r[1],
+            last_updated=r[2],
+            keywords=json.loads(r[3]),
+            tags=json.loads(r[4]),
+            category=r[5],
+            retrieval_count=r[6],
+            embedding_model=r[7],
+            embedding=json.loads(r[8]) if r[8] else None,
+        )
 
     # ── communities ──
 
@@ -199,13 +235,10 @@ class SQLiteDocumentStore(DocumentStorePort):
 
     def search_chunks(self, query: str) -> list[TextChunk]:
         cur = self._conn.execute(
-            "SELECT * FROM chunks WHERE LOWER(text) LIKE LOWER(?)",
+            "SELECT * FROM chunks WHERE LOWER(content) LIKE LOWER(?)",
             (f"%{query}%",),
         )
-        return [
-            TextChunk(id=r[0], text=r[1], source_doc=r[2], metadata=json.loads(r[3]))
-            for r in cur.fetchall()
-        ]
+        return [self._row_to_chunk(r) for r in cur.fetchall()]
 
     def clone(self) -> "SQLiteDocumentStore":
         """Create an independent copy via sqlite3 backup API."""

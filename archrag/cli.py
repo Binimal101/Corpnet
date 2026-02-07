@@ -99,7 +99,7 @@ def search(ctx: click.Context, query_str: str, search_type: str) -> None:
         if chunks:
             click.echo(f"\n--- Chunks matching '{query_str}' ({len(chunks)}) ---")
             for c in chunks:
-                click.echo(f"  {c['id']}: {c['text'][:120]}...")
+                click.echo(f"  {c['id']}: {c['content'][:120]}...")
         else:
             click.echo(f"No chunks matching '{query_str}'.")
 

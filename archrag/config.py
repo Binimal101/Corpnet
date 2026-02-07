@@ -76,32 +76,42 @@ def build_llm(cfg: dict[str, Any]) -> LLMPort:
     raise ValueError(f"Unknown LLM adapter: {adapter}")
 
 
-def build_graph_store(cfg: dict[str, Any]) -> GraphStorePort:
+def build_graph_store(cfg: dict[str, Any], *, config_dir: str = ".") -> GraphStorePort:
     adapter = cfg.get("adapter", "sqlite")
     db_path = cfg.get("path", "data/archrag.db")
 
     if adapter == "sqlite":
         from archrag.adapters.stores.sqlite_graph import SQLiteGraphStore
-        return SQLiteGraphStore(db_path=db_path)
+        resolved = str((Path(config_dir) / db_path).resolve())
+        return SQLiteGraphStore(db_path=resolved)
 
     elif adapter == "in_memory":
         from archrag.adapters.stores.in_memory_graph import InMemoryGraphStore
         return InMemoryGraphStore()
 
+    elif adapter == "stub":
+        from consumer.adapters.stub_store import StubGraphStore
+        return StubGraphStore()
+
     raise ValueError(f"Unknown graph_store adapter: {adapter}")
 
 
-def build_document_store(cfg: dict[str, Any]) -> DocumentStorePort:
+def build_document_store(cfg: dict[str, Any], *, config_dir: str = ".") -> DocumentStorePort:
     adapter = cfg.get("adapter", "sqlite")
     db_path = cfg.get("path", "data/archrag.db")
 
     if adapter == "sqlite":
         from archrag.adapters.stores.sqlite_document import SQLiteDocumentStore
-        return SQLiteDocumentStore(db_path=db_path)
+        resolved = str((Path(config_dir) / db_path).resolve())
+        return SQLiteDocumentStore(db_path=resolved)
 
     elif adapter == "in_memory":
         from archrag.adapters.stores.in_memory_document import InMemoryDocumentStore
         return InMemoryDocumentStore()
+
+    elif adapter == "stub":
+        from consumer.adapters.stub_store import StubDocumentStore
+        return StubDocumentStore()
 
     raise ValueError(f"Unknown document_store adapter: {adapter}")
 
@@ -113,6 +123,10 @@ def build_vector_index(cfg: dict[str, Any]) -> VectorIndexPort:
         from archrag.adapters.indexes.numpy_vector import NumpyVectorIndex
         return NumpyVectorIndex()
 
+    elif adapter == "stub":
+        from consumer.adapters.stub_store import StubVectorIndex
+        return StubVectorIndex()
+
     raise ValueError(f"Unknown vector_index adapter: {adapter}")
 
 
@@ -123,6 +137,21 @@ def build_clustering(cfg: dict[str, Any]) -> ClusteringPort:
     if adapter == "leiden":
         from archrag.adapters.clustering.leiden import LeidenClustering
         return LeidenClustering(resolution=resolution)
+
+    elif adapter == "stub":
+        from archrag.ports.clustering import WeightedEdge
+
+        class _StubClustering(ClusteringPort):
+            """No-op clustering — consumer never clusters."""
+
+            def cluster(
+                self,
+                node_ids: list[str],
+                edges: list[WeightedEdge],
+            ) -> list[list[str]]:
+                return [node_ids] if node_ids else []
+
+        return _StubClustering()
 
     raise ValueError(f"Unknown clustering adapter: {adapter}")
 
@@ -136,6 +165,7 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
     log = logging.getLogger(__name__)
 
     cfg = load_config(config_path)
+    config_parent = str(Path(config_path).resolve().parent)
 
     log.info("  → building embedding adapter …")
     embedding = build_embedding(cfg.get("embedding", {}))
@@ -146,11 +176,11 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
     log.info("  ✓ LLM ready")
 
     log.info("  → building graph store …")
-    graph_store = build_graph_store(cfg.get("graph_store", {}))
+    graph_store = build_graph_store(cfg.get("graph_store", {}), config_dir=config_parent)
     log.info("  ✓ graph store ready")
 
     log.info("  → building document store …")
-    doc_store = build_document_store(cfg.get("document_store", {}))
+    doc_store = build_document_store(cfg.get("document_store", {}), config_dir=config_parent)
     log.info("  ✓ document store ready")
 
     log.info("  → building vector index …")
@@ -164,6 +194,13 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
     indexing_cfg = cfg.get("indexing", {})
     retrieval_cfg = cfg.get("retrieval", {})
     chnsw_cfg = cfg.get("chnsw", {})
+
+    # data_dir: where archrag.db and chnsw_vectors.json live.
+    # Resolved relative to the config file's parent directory.
+    raw_data_dir = cfg.get("data_dir", "data")
+    data_dir = str((Path(config_parent) / raw_data_dir).resolve())
+    log.info("  → data directory: %s", data_dir)
+    Path(data_dir).mkdir(parents=True, exist_ok=True)
 
     return ArchRAGOrchestrator(
         llm=llm,
@@ -179,4 +216,5 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
         M=chnsw_cfg.get("M", 32),
         ef_construction=chnsw_cfg.get("ef_construction", 100),
         k_per_layer=retrieval_cfg.get("k_per_layer", 5),
+        data_dir=data_dir,
     )

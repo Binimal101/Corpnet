@@ -9,6 +9,7 @@ inter-layer links (nearest neighbour in adjacent layer).
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 
@@ -33,6 +34,7 @@ class CHNSWBuildService:
         *,
         M: int = 32,
         ef_construction: int = 100,
+        data_dir: str = "data",
     ):
         self._embedding = embedding
         self._vector_index = vector_index
@@ -40,6 +42,7 @@ class CHNSWBuildService:
         self._doc_store = doc_store
         self._M = M
         self._ef_construction = ef_construction
+        self._data_dir = data_dir
 
     # ── public ──
 
@@ -141,7 +144,8 @@ class CHNSWBuildService:
                     upper_node.inter_link_down = results[0][0]
 
         # ── Persist the vector index ──
-        self._vector_index.save("data/chnsw_vectors.json")
+        vec_path = str(Path(self._data_dir) / "chnsw_vectors.json")
+        self._vector_index.save(vec_path)
         self._doc_store.put_meta("chnsw_height", str(len(index.layers)))
 
         log.info(

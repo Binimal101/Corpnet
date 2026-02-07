@@ -40,7 +40,7 @@ archrag = "archrag.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["archrag*"]
+include = ["archrag*", "producer*", "consumer*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

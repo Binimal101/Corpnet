@@ -15,12 +15,21 @@ def _uid() -> str:
 
 @dataclass
 class TextChunk:
-    """A segment of a source document."""
+    """A chunk of content stored in the knowledge base.
 
-    text: str
+    Fields marked *used in emb* are concatenated to form the
+    embedding input when the embedding is computed externally.
+    """
+
+    content: str                                          # used in emb
     id: str = field(default_factory=_uid)
-    source_doc: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    last_updated: str = ""                                 # YYYYMMDDHHMM, used in emb
+    keywords: list[str] = field(default_factory=list)      # used in emb
+    tags: list[str] = field(default_factory=list)          # used in emb
+    category: str = ""                                     # used in emb
+    retrieval_count: int = 0                               # used in emb
+    embedding_model: str = ""
+    embedding: list[float] | None = None
 
 
 # ── Knowledge Graph ─────────────────────────────────────────────────────────

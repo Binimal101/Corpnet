@@ -1,3 +1,13 @@
 .env
 __pycache__/
 .venv/
+
+# Producer data — auto-created, only .gitkeep is tracked
+producer/data/archrag.db*
+producer/data/chnsw_vectors.json
+
+# Legacy root data dir (monolith)
+data/archrag.db*
+data/chnsw_vectors.json
+
+*.egg-info/
