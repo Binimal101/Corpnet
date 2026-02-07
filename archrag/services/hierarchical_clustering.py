@@ -233,7 +233,6 @@ class HierarchicalClusteringService:
         entities_block = "\n".join(f"- {t}" for t in member_texts[:30])
         prompt = COMMUNITY_SUMMARY_PROMPT.format(
             entities_text=entities_block,
-            relations_text="(see entity descriptions)",
         )
         try:
             return self._llm.generate(prompt, system=COMMUNITY_SUMMARY_SYSTEM)

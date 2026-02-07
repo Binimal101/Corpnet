@@ -1,20 +1,18 @@
 """Prompts for community summarisation."""
 
 COMMUNITY_SUMMARY_SYSTEM = (
-    "You are a summarisation expert. "
-    "Given a set of entities and their relationships that form a community, "
-    "produce a concise thematic summary."
+    "You produce very short community labels. "
+    "Output only the summary — no preamble, no bullet points, no commentary."
 )
 
 COMMUNITY_SUMMARY_PROMPT = """\
-The following entities and relationships form a community in a knowledge graph.
-Summarise the main theme(s) and key information of this community in 2-4 sentences.
+Below are the members of a single community. Write ONE short sentence (max 15 words) \
+that captures what these members have in common. Do NOT mention other communities, \
+hierarchy levels, or how this group relates to anything outside it. \
+Just state the shared topic or theme.
 
-Entities:
+Members:
 {entities_text}
 
-Relationships:
-{relations_text}
-
-Summary:
+One-sentence summary:
 """

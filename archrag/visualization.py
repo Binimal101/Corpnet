@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import textwrap
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -36,6 +35,22 @@ LEVEL_COLOURS = [
 
 def _colour(level: int) -> str:
     return LEVEL_COLOURS[level % len(LEVEL_COLOURS)]
+
+
+def _wrap(text: str, width: int = 22) -> str:
+    """Wrap *text* into multiple lines for Plotly labels using <br>."""
+    words = text.split()
+    lines: list[str] = []
+    cur = ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}" if cur else w
+    if cur:
+        lines.append(cur)
+    return "<br>".join(lines)
 
 
 # ── Data loading ────────────────────────────────────────────────────────────
@@ -97,8 +112,7 @@ def _make_dag_figure(comms, level_ids):
 
     G = nx.DiGraph()
     for cid, c in comms.items():
-        short = textwrap.shorten(c["summary"], width=90, placeholder="…")
-        G.add_node(cid, level=c["level"], summary=c["summary"], label=short,
+        G.add_node(cid, level=c["level"], summary=c["summary"], label=c["summary"],
                    member_ids=c["member_ids"])
 
     for level_idx in range(1, len(level_ids)):
@@ -109,13 +123,13 @@ def _make_dag_figure(comms, level_ids):
                 if child_id in comms:
                     G.add_edge(child_id, parent_id)
 
-    # Layout
+    # Layout — widen horizontal spacing so wrapped labels don't collide
     pos: dict[str, tuple[float, float]] = {}
     for level_idx, ids in enumerate(level_ids):
         n = len(ids)
         for i, cid in enumerate(ids):
             if cid in G:
-                pos[cid] = ((i - (n - 1) / 2) * 2.0, level_idx * 3.0)
+                pos[cid] = ((i - (n - 1) / 2) * 3.5, level_idx * 4.0)
 
     edge_x, edge_y = [], []
     for u, v in G.edges():
@@ -138,23 +152,33 @@ def _make_dag_figure(comms, level_ids):
             x, y = pos[cid]
             data = G.nodes[cid]
             xs.append(x); ys.append(y)
-            texts.append(textwrap.shorten(data.get("label", cid[:8]), 40, placeholder="…"))
-            hovers.append(
-                f"<b>Level {level_idx}</b><br>"
-                f"<b>ID:</b> {cid[:10]}<br>"
-                f"<b>Members:</b> {len(data.get('member_ids', []))}<br><br>"
-                f"<i>{textwrap.fill(data.get('summary', ''), 60)}</i>"
-            )
+            texts.append(_wrap(data.get("label", cid[:8])))
+            hovers.append(data.get('summary', ''))
             sizes.append(max(18, min(50, 12 + len(data.get("member_ids", [])) * 3)))
+
+        # Legend label — annotate bottom vs top of hierarchy
+        n_levels = len(level_ids)
+        if level_idx == 0:
+            legend_label = f"Level {level_idx} (bottom · entities)"
+        elif level_idx == n_levels - 1:
+            legend_label = f"Level {level_idx} (top · most abstract)"
+        else:
+            legend_label = f"Level {level_idx}"
 
         node_traces.append(go.Scatter(
             x=xs, y=ys, mode="markers+text",
             marker=dict(size=sizes, color=_colour(level_idx),
                         line=dict(width=1.5, color="white"), opacity=0.92),
             text=texts, textposition="top center",
-            textfont=dict(size=9, color="#333"),
+            textfont=dict(size=8, color="#444"),
             hovertext=hovers, hoverinfo="text",
-            name=f"Level {level_idx}",
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor=_colour(level_idx),
+                font=dict(size=12, color="#222"),
+                align="left",
+            ),
+            name=legend_label,
         ))
 
     fig = go.Figure(data=[edge_trace] + node_traces)
@@ -166,9 +190,10 @@ def _make_dag_figure(comms, level_ids):
         legend=dict(title="Hierarchy Level", bgcolor="rgba(255,255,255,0.85)",
                     bordercolor="#ccc", borderwidth=1),
         hovermode="closest",
+        hoverdistance=30,
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, title="Level ↑"),
-        plot_bgcolor="white", margin=dict(l=20, r=20, t=80, b=20), height=800,
+        plot_bgcolor="white", margin=dict(l=20, r=20, t=80, b=40), height=900,
     )
     return fig
 
@@ -199,16 +224,11 @@ def _make_treemap(comms, level_ids, entities):
                 continue
             c = comms[cid]
             parent = child_to_parent.get(cid, "ROOT")
-            short_summary = textwrap.shorten(c["summary"], width=60, placeholder="…")
             ids_list.append(cid)
-            labels.append(f"L{c['level']}: {short_summary}")
+            labels.append(c["summary"])
             parents.append(parent)
             colours.append(_colour(c["level"]))
-            hovertexts.append(
-                f"<b>Level {c['level']}</b> | ID: {cid[:10]}<br>"
-                f"Members: {len(c['member_ids'])}<br><br>"
-                f"{textwrap.fill(c['summary'], 70)}"
-            )
+            hovertexts.append(c["summary"])
             values.append(0)
 
     for cid in level_ids[0]:
@@ -233,6 +253,10 @@ def _make_treemap(comms, level_ids, entities):
         branchvalues="total",
         marker=dict(colors=colours, line=dict(width=1.5, color="white")),
         hovertext=hovertexts, hoverinfo="text", textinfo="label",
+        hoverlabel=dict(
+            bgcolor="white", bordercolor="#888",
+            font=dict(size=12, color="#222"), align="left",
+        ),
         textfont=dict(size=11),
         pathbar=dict(visible=True, textfont=dict(size=12)),
         maxdepth=3,
@@ -272,15 +296,12 @@ def _make_sunburst(comms, level_ids, entities):
                 continue
             c = comms[cid]
             parent = child_to_parent.get(cid, "ROOT")
-            short = textwrap.shorten(c["summary"], 50, placeholder="…")
             ids_list.append(cid)
-            labels.append(f"L{c['level']}: {short}")
+            labels.append(c["summary"])
             parents.append(parent)
             values.append(0)
             colours.append(_colour(c["level"]))
-            hovertexts.append(
-                f"<b>Level {c['level']}</b><br>{textwrap.fill(c['summary'], 60)}"
-            )
+            hovertexts.append(c["summary"])
 
     for cid in level_ids[0]:
         if cid not in comms:
@@ -300,6 +321,10 @@ def _make_sunburst(comms, level_ids, entities):
         branchvalues="total",
         marker=dict(colors=colours, line=dict(width=1, color="white")),
         hovertext=hovertexts, hoverinfo="text", textfont=dict(size=10),
+        hoverlabel=dict(
+            bgcolor="white", bordercolor="#888",
+            font=dict(size=12, color="#222"), align="left",
+        ),
         maxdepth=3,
     ))
     fig.update_layout(
@@ -368,6 +393,14 @@ def generate_visualization(
   .panel.active {{ display: block; }}
   h2 {{ margin: 18px 20px 4px; color: #333; }}
   .desc {{ margin: 4px 20px 10px; color: #777; font-size: 13px; }}
+  /* Speech-bubble tooltips */
+  .plotly .hoverlayer .hovertext path {{
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.18));
+    rx: 8; ry: 8;
+  }}
+  .plotly .hoverlayer .hovertext {{
+    transform: translateY(-14px);
+  }}
 </style>
 </head>
 <body>
@@ -394,6 +427,24 @@ function show(id) {{
   event.target.classList.add('active');
   setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
 }}
+
+/* Round the SVG tooltip rects and nudge them upward to look like speech bubbles */
+new MutationObserver(function(muts) {{
+  muts.forEach(function(m) {{
+    m.addedNodes.forEach(function(n) {{
+      if (!n.querySelectorAll) return;
+      n.querySelectorAll('.hovertext path').forEach(function(p) {{
+        var d = p.getAttribute('d');
+        if (d) {{
+          /* Plotly draws sharp-cornered paths; we replace with rounded rect attr */
+          p.setAttribute('rx', '10');
+          p.setAttribute('ry', '10');
+          p.style.filter = 'drop-shadow(0 3px 8px rgba(0,0,0,0.22))';
+        }}
+      }});
+    }});
+  }});
+}}).observe(document.body, {{ childList: true, subtree: true }});
 </script>
 </body>
 </html>"""
