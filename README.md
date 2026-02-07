@@ -13,12 +13,12 @@ python -m venv .venv
 ```
 
 For Windows:
-```powershell
+```cmd
 .venv\Scripts\activate
 ```
 
 For Mac/Linux:
-```powershell
+```sh
 source .venv/bin/activate
 ```
 
