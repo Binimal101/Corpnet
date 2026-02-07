@@ -289,14 +289,6 @@ class AgentTools:
                             "type": "boolean",
                             "description": "If true, only sync new/changed records. Default is true.",
                         },
-                        "enable_linking": {
-                            "type": "boolean",
-                            "description": "Whether to create links between related notes. Default is true.",
-                        },
-                        "enable_evolution": {
-                            "type": "boolean",
-                            "description": "Whether to evolve existing notes based on new data. Default is false.",
-                        },
                         "save_preferences": {
                             "type": "boolean",
                             "description": "Whether to save table and column preferences to the connection. Default is true.",
@@ -324,14 +316,6 @@ class AgentTools:
                         "text_columns": {
                             "type": "object",
                             "description": "Map of table name -> columns for text extraction.",
-                        },
-                        "enable_linking": {
-                            "type": "boolean",
-                            "description": "Whether to create links between notes.",
-                        },
-                        "enable_evolution": {
-                            "type": "boolean",
-                            "description": "Whether to evolve existing notes.",
                         },
                         "auto_sync_enabled": {
                             "type": "boolean",
@@ -499,8 +483,6 @@ class AgentTools:
                 "text_columns": conn.text_columns_map,
                 "auto_sync": conn.auto_sync_enabled,
                 "auto_sync_interval": conn.auto_sync_interval,
-                "enable_linking": conn.enable_linking,
-                "enable_evolution": conn.enable_evolution,
                 "created_at": conn.created_at,
                 "last_used": conn.last_used_at or "never",
                 "last_sync": conn.last_sync_at or "never",
@@ -695,8 +677,6 @@ class AgentTools:
         tables: list[str] | None = None,
         text_columns: dict[str, list[str]] | None = None,
         incremental: bool = True,
-        enable_linking: bool = True,
-        enable_evolution: bool = False,
         save_preferences: bool = True,
     ) -> ToolResult:
         try:
@@ -704,8 +684,6 @@ class AgentTools:
                 tables=tables,
                 text_columns_map=text_columns,
                 incremental=incremental,
-                enable_linking=enable_linking,
-                enable_evolution=enable_evolution,
             )
             
             records_added = result.get("records_added", 0)
@@ -722,8 +700,6 @@ class AgentTools:
                     self._current_connection.tables = tables
                 if text_columns:
                     self._current_connection.text_columns_map = text_columns
-                self._current_connection.enable_linking = enable_linking
-                self._current_connection.enable_evolution = enable_evolution
                 self._store.save_connection(self._current_connection)
                 
                 # Record in sync history
@@ -753,8 +729,6 @@ class AgentTools:
         name: str,
         tables: list[str] | None = None,
         text_columns: dict[str, list[str]] | None = None,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
         auto_sync_enabled: bool | None = None,
         auto_sync_interval: int | None = None,
     ) -> ToolResult:
@@ -770,10 +744,6 @@ class AgentTools:
             conn.tables = tables
         if text_columns is not None:
             conn.text_columns_map = text_columns
-        if enable_linking is not None:
-            conn.enable_linking = enable_linking
-        if enable_evolution is not None:
-            conn.enable_evolution = enable_evolution
         if auto_sync_enabled is not None:
             conn.auto_sync_enabled = auto_sync_enabled
         if auto_sync_interval is not None:

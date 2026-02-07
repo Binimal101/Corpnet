@@ -175,6 +175,4 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
         M=chnsw_cfg.get("M", 32),
         ef_construction=chnsw_cfg.get("ef_construction", 100),
         k_per_layer=retrieval_cfg.get("k_per_layer", 5),
-        note_k_nearest=memory_cfg.get("k_nearest", 10),
-        note_enable_evolution=memory_cfg.get("enable_evolution", True),
     )

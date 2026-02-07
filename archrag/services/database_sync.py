@@ -205,11 +205,15 @@ class DatabaseSyncService:
         """Get the current sync state for a table."""
         key = f"{self.SYNC_STATE_KEY_PREFIX}{table}"
         data = self._doc_store.get_meta(key)
-        if not data:
+        if not data or (isinstance(data, str) and not data.strip()):
             return None
 
         if isinstance(data, str):
-            data = json.loads(data)
+            try:
+                data = json.loads(data)
+            except (json.JSONDecodeError, ValueError):
+                log.warning("Invalid sync state JSON for table %s, resetting", table)
+                return None
 
         return SyncState(
             connector_id=data.get("connector_id", ""),

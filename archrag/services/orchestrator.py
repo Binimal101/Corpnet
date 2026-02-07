@@ -56,8 +56,6 @@ class ArchRAGOrchestrator:
         M: int = 32,
         ef_construction: int = 100,
         k_per_layer: int = 5,
-        note_k_nearest: int = 10,
-        note_enable_evolution: bool = True,
     ):
         self._llm = llm
         self._embedding = embedding
@@ -96,8 +94,6 @@ class ArchRAGOrchestrator:
         if memory_note_store is not None:
             self._note_service = NoteConstructionService(
                 llm, embedding, memory_note_store,
-                k_nearest=note_k_nearest,
-                enable_evolution=note_enable_evolution,
             )
             
             # Create unified ingestion pipeline
@@ -110,8 +106,6 @@ class ArchRAGOrchestrator:
                 note_service=self._note_service,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
-                enable_linking=True,
-                enable_evolution=note_enable_evolution,
             )
 
         self._index: CHNSWIndex | None = None
