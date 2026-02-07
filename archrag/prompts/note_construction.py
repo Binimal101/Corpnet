@@ -1,9 +1,7 @@
-"""LLM prompts for MemoryNote construction, linking, and evolution.
+"""LLM prompts for MemoryNote construction.
 
 Based on the A-Mem paper (arXiv 2502.12110) Section 3:
-- P_s1: Note construction (keywords, context, tags)
-- P_s2: Link generation (determine connections)
-- P_s3: Memory evolution (update existing notes)
+- P_s1: Note construction (keywords, tags)
 """
 
 # ── P_s1: Note Construction ──────────────────────────────────────────────────
@@ -13,8 +11,7 @@ Your goal is to create rich, searchable representations of information for later
 
 NOTE_CONSTRUCTION_PROMPT = """Generate a structured analysis of the following content by:
 1. Identifying the most salient keywords (focus on nouns, verbs, and key concepts)
-2. Extracting core themes and contextual elements
-3. Creating relevant categorical tags
+2. Creating relevant categorical tags
 
 Format the response as a JSON object:
 {{
@@ -24,12 +21,6 @@ Format the response as a JSON object:
         // Don't include keywords that are names of speakers or timestamps
         // At least three keywords, but avoid redundancy
     ],
-    "context": 
-        // One sentence summarizing:
-        // - Main topic/domain
-        // - Key arguments/points
-        // - Intended audience/purpose
-    ,
     "tags": [
         // Several broad categories/themes for classification
         // Include domain, format, and type tags

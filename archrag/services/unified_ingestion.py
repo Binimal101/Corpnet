@@ -67,8 +67,6 @@ class UnifiedIngestionPipeline:
         *,
         chunk_size: int = 1200,
         chunk_overlap: int = 100,
-        enable_linking: bool = True,
-        enable_evolution: bool = True,
     ) -> None:
         """Initialize the unified pipeline.
         
@@ -81,8 +79,6 @@ class UnifiedIngestionPipeline:
             note_service: Service for building enriched notes.
             chunk_size: Characters per chunk.
             chunk_overlap: Overlap between chunks.
-            enable_linking: Whether to link related notes.
-            enable_evolution: Whether to evolve existing notes.
         """
         self._llm = llm
         self._embedding = embedding
@@ -92,8 +88,6 @@ class UnifiedIngestionPipeline:
         self._note_service = note_service
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
-        self._enable_linking = enable_linking
-        self._enable_evolution = enable_evolution
         
         # Import extraction prompts
         from archrag.prompts.extraction import (
@@ -109,34 +103,23 @@ class UnifiedIngestionPipeline:
         self,
         input_data: dict[str, Any],
         *,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
         skip_kg: bool = False,
     ) -> MemoryNote:
         """Ingest a single item through the unified pipeline.
         
         Args:
             input_data: Dict with 'content' or 'text' key, optional metadata.
-            enable_linking: Override default linking behavior.
-            enable_evolution: Override default evolution behavior.
             skip_kg: If True, only create MemoryNote, skip KG pipeline.
             
         Returns:
             The created MemoryNote.
         """
-        linking = enable_linking if enable_linking is not None else self._enable_linking
-        evolution = enable_evolution if enable_evolution is not None else self._enable_evolution
-        
         # Step 1: Build MemoryNote with LLM enrichment
-        note = self._note_service.build_note(
-            input_data,
-            enable_linking=linking,
-            enable_evolution=evolution,
-        )
+        note = self._note_service.build_note(input_data)
         
         # Step 2: Save to note store
         self._note_store.save_note(note)
-        log.info("Created MemoryNote %s: %s...", note.id, note.context[:50] if note.context else note.content[:50])
+        log.info("Created MemoryNote %s: %s...", note.id, note.content[:50])
         
         # Step 3: If not skipping KG, run through chunking and entity extraction
         if not skip_kg:
@@ -148,16 +131,12 @@ class UnifiedIngestionPipeline:
         self,
         items: list[dict[str, Any]],
         *,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
         skip_kg: bool = False,
     ) -> list[MemoryNote]:
         """Ingest multiple items through the unified pipeline.
         
         Args:
             items: List of dicts with 'content' or 'text' keys.
-            enable_linking: Override default linking behavior.
-            enable_evolution: Override default evolution behavior.
             skip_kg: If True, only create MemoryNotes, skip KG pipeline.
             
         Returns:
@@ -167,12 +146,7 @@ class UnifiedIngestionPipeline:
         
         for item in items:
             try:
-                note = self.ingest_single(
-                    item,
-                    enable_linking=enable_linking,
-                    enable_evolution=enable_evolution,
-                    skip_kg=skip_kg,
-                )
+                note = self.ingest_single(item, skip_kg=skip_kg)
                 notes.append(note)
             except Exception as e:
                 log.error("Failed to ingest item: %s", e)
@@ -184,16 +158,11 @@ class UnifiedIngestionPipeline:
     def ingest_file(
         self,
         path: str,
-        *,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
     ) -> list[MemoryNote]:
         """Ingest documents from a file (JSONL or JSON).
         
         Args:
             path: Path to corpus file.
-            enable_linking: Override default linking behavior.
-            enable_evolution: Override default evolution behavior.
             
         Returns:
             List of created MemoryNotes.
@@ -201,25 +170,16 @@ class UnifiedIngestionPipeline:
         documents = self._load_file(path)
         log.info("Loaded %d documents from %s", len(documents), path)
         
-        return self.ingest_batch(
-            documents,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
-        )
+        return self.ingest_batch(documents)
 
     def ingest_from_external_record(
         self,
         record: Any,  # ExternalRecord
-        *,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
     ) -> MemoryNote:
         """Ingest an ExternalRecord (from database sync) through unified pipeline.
         
         Args:
             record: ExternalRecord from SQL/NoSQL connector.
-            enable_linking: Override default linking behavior.
-            enable_evolution: Override default evolution behavior.
             
         Returns:
             The created MemoryNote.
@@ -227,11 +187,7 @@ class UnifiedIngestionPipeline:
         # Convert ExternalRecord to input dict
         input_data = record.to_note_input()
         
-        return self.ingest_single(
-            input_data,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
-        )
+        return self.ingest_single(input_data)
 
     def get_kg_from_notes(self) -> KnowledgeGraph:
         """Build a KnowledgeGraph from all stored notes.
@@ -346,17 +302,12 @@ class UnifiedIngestionPipeline:
         chunks: list[TextChunk] = []
         content = note.content
         
-        # Include context and keywords in the chunk for better extraction
-        enriched_content = content
-        if note.context:
-            enriched_content = f"{note.context}\n\n{content}"
-        
         start = 0
         chunk_idx = 0
         
-        while start < len(enriched_content):
+        while start < len(content):
             end = start + self._chunk_size
-            chunk_text = enriched_content[start:end]
+            chunk_text = content[start:end]
             
             chunk = TextChunk(
                 text=chunk_text,

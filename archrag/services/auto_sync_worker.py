@@ -30,8 +30,6 @@ class AutoSyncConfig:
     poll_interval: float = 300.0  # 5 minutes default
     tables: list[str] | None = None  # None = all tables
     text_columns_map: dict[str, list[str]] | None = None
-    enable_linking: bool = True
-    enable_evolution: bool = False  # Disabled for efficiency
     max_records_per_poll: int = 1000  # Safety limit
 
 
@@ -96,8 +94,6 @@ class AutoSyncWorker:
         poll_interval: float | None = None,
         tables: list[str] | None = None,
         text_columns_map: dict[str, list[str]] | None = None,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
         max_records_per_poll: int | None = None,
     ) -> None:
         """Update auto-sync configuration.
@@ -106,8 +102,6 @@ class AutoSyncWorker:
             poll_interval: Seconds between polls.
             tables: Specific tables to sync. None = all tables.
             text_columns_map: Map of table -> text columns.
-            enable_linking: Whether to create links between notes.
-            enable_evolution: Whether to evolve existing notes.
             max_records_per_poll: Maximum records per poll cycle.
         """
         with self._lock:
@@ -117,10 +111,6 @@ class AutoSyncWorker:
                 self._config.tables = tables
             if text_columns_map is not None:
                 self._config.text_columns_map = text_columns_map
-            if enable_linking is not None:
-                self._config.enable_linking = enable_linking
-            if enable_evolution is not None:
-                self._config.enable_evolution = enable_evolution
             if max_records_per_poll is not None:
                 self._config.max_records_per_poll = max_records_per_poll
 
@@ -155,8 +145,6 @@ class AutoSyncWorker:
                 "enabled": self._config.enabled,
                 "poll_interval": self._config.poll_interval,
                 "tables": self._config.tables,
-                "enable_linking": self._config.enable_linking,
-                "enable_evolution": self._config.enable_evolution,
                 "max_records_per_poll": self._config.max_records_per_poll,
             }
 
@@ -239,15 +227,11 @@ class AutoSyncWorker:
             self._sync_in_progress = True
             tables = self._config.tables
             text_columns_map = self._config.text_columns_map
-            enable_linking = self._config.enable_linking
-            enable_evolution = self._config.enable_evolution
 
         try:
             result = self._sync_service.incremental_sync(
                 tables=tables,
                 text_columns_map=text_columns_map,
-                enable_linking=enable_linking,
-                enable_evolution=enable_evolution,
             )
 
             # Update stats

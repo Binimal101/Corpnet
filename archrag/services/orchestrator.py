@@ -243,8 +243,6 @@ class ArchRAGOrchestrator:
         text_columns_map: dict[str, list[str]] | None = None,
         *,
         incremental: bool = True,
-        enable_linking: bool = True,
-        enable_evolution: bool = True,
     ) -> dict[str, Any]:
         """Sync records from the connected external database.
 
@@ -252,8 +250,6 @@ class ArchRAGOrchestrator:
             tables: Tables to sync. If None, syncs all tables.
             text_columns_map: Map of table -> text columns for indexing.
             incremental: If True, only sync new/changed records.
-            enable_linking: Whether to create links between notes.
-            enable_evolution: Whether to evolve existing notes.
 
         Returns:
             Sync result with statistics.
@@ -265,15 +261,11 @@ class ArchRAGOrchestrator:
             result = self._db_sync_service.incremental_sync(
                 tables=tables,
                 text_columns_map=text_columns_map,
-                enable_linking=enable_linking,
-                enable_evolution=enable_evolution,
             )
         else:
             result = self._db_sync_service.full_sync(
                 tables=tables,
                 text_columns_map=text_columns_map,
-                enable_linking=enable_linking,
-                enable_evolution=enable_evolution,
             )
 
         return {
@@ -310,8 +302,6 @@ class ArchRAGOrchestrator:
         poll_interval: float = 300.0,
         tables: list[str] | None = None,
         text_columns_map: dict[str, list[str]] | None = None,
-        enable_linking: bool = True,
-        enable_evolution: bool = False,
     ) -> dict[str, Any]:
         """Enable automatic background syncing of database.
 
@@ -323,8 +313,6 @@ class ArchRAGOrchestrator:
             poll_interval: Seconds between polls (default: 300 = 5 minutes).
             tables: Specific tables to monitor. None = all tables.
             text_columns_map: Map of table -> text columns for extraction.
-            enable_linking: Whether to create links between notes.
-            enable_evolution: Whether to evolve existing notes.
 
         Returns:
             Current auto-sync configuration.
@@ -342,8 +330,6 @@ class ArchRAGOrchestrator:
             poll_interval=poll_interval,
             tables=tables,
             text_columns_map=text_columns_map,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
         )
         self._auto_sync_worker.enable()
 
@@ -366,8 +352,6 @@ class ArchRAGOrchestrator:
         poll_interval: float | None = None,
         tables: list[str] | None = None,
         text_columns_map: dict[str, list[str]] | None = None,
-        enable_linking: bool | None = None,
-        enable_evolution: bool | None = None,
     ) -> dict[str, Any]:
         """Update auto-sync configuration without enabling/disabling.
 
@@ -375,8 +359,6 @@ class ArchRAGOrchestrator:
             poll_interval: Seconds between polls.
             tables: Specific tables to monitor.
             text_columns_map: Map of table -> text columns.
-            enable_linking: Whether to create links between notes.
-            enable_evolution: Whether to evolve existing notes.
 
         Returns:
             Updated configuration.
@@ -388,8 +370,6 @@ class ArchRAGOrchestrator:
             poll_interval=poll_interval,
             tables=tables,
             text_columns_map=text_columns_map,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
         )
         return self._auto_sync_worker.get_config()
 
@@ -660,8 +640,6 @@ class ArchRAGOrchestrator:
     def add_memory_note(
         self,
         input_data: dict[str, Any],
-        enable_linking: bool = True,
-        enable_evolution: bool | None = None,
         skip_kg: bool = False,
         rebuild_hierarchy: bool = False,
     ) -> dict[str, Any]:
@@ -672,8 +650,6 @@ class ArchRAGOrchestrator:
 
         Args:
             input_data: Dict with 'content' or 'text', optional 'category', 'tags'.
-            enable_linking: Whether to find and link related notes.
-            enable_evolution: Whether to update related notes.
             skip_kg: If True, only create MemoryNote without KG extraction.
             rebuild_hierarchy: Whether to rebuild clustering/C-HNSW after adding.
 
@@ -686,11 +662,9 @@ class ArchRAGOrchestrator:
         # Use unified pipeline: Input → Note → Chunks → KG
         note = self._unified_pipeline.ingest_single(
             input_data,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
             skip_kg=skip_kg,
         )
-        log.info("Created memory note %s with %d links via unified pipeline", note.id, len(note.links))
+        log.info("Created memory note %s via unified pipeline", note.id)
 
         # Optionally rebuild hierarchy (expensive, usually done in batch)
         if rebuild_hierarchy:
@@ -709,11 +683,11 @@ class ArchRAGOrchestrator:
             "id": note.id,
             "content": note.content[:200] + ("..." if len(note.content) > 200 else ""),
             "keywords": note.keywords,
-            "context": note.context,
             "tags": note.tags,
             "category": note.category,
-            "links": note.links,
-            "timestamp": note.timestamp,
+            "last_updated": note.last_updated,
+            "retrieval_count": note.retrieval_count,
+            "embedding_model": note.embedding_model,
         }
 
     def get_memory_note(self, note_id: str) -> dict[str, Any] | None:
@@ -733,36 +707,36 @@ class ArchRAGOrchestrator:
             "id": note.id,
             "content": note.content,
             "keywords": note.keywords,
-            "context": note.context,
             "tags": note.tags,
             "category": note.category,
-            "links": note.links,
-            "timestamp": note.timestamp,
-            "last_accessed": note.last_accessed,
+            "last_updated": note.last_updated,
             "retrieval_count": note.retrieval_count,
+            "embedding_model": note.embedding_model,
         }
 
-    def get_related_notes(self, note_id: str) -> list[dict[str, Any]]:
-        """Get notes linked to a given note."""
+    def get_related_notes(self, note_id: str, k: int = 10) -> list[dict[str, Any]]:
+        """Get notes semantically related to a given note via similarity search."""
         if self._memory_note_store is None:
             return []
 
         note = self._memory_note_store.get_note(note_id)
-        if note is None:
+        if note is None or not note.embedding:
             return []
 
-        related: list[dict[str, Any]] = []
-        for linked_id, relation_type in note.links.items():
-            linked = self._memory_note_store.get_note(linked_id)
-            if linked:
-                related.append({
-                    "id": linked.id,
-                    "content": linked.content[:200] + ("..." if len(linked.content) > 200 else ""),
-                    "context": linked.context,
-                    "relation_type": relation_type,
-                })
+        # Find k+1 nearest notes (excluding the note itself)
+        nearest = self._memory_note_store.get_nearest_notes(
+            note.embedding, k + 1, exclude_ids=[note_id]
+        )
 
-        return related
+        return [
+            {
+                "id": n.id,
+                "content": n.content[:200] + ("..." if len(n.content) > 200 else ""),
+                "tags": n.tags,
+                "category": n.category,
+            }
+            for n in nearest[:k]
+        ]
 
     def search_notes_by_content(self, query: str, k: int = 10) -> list[dict[str, Any]]:
         """Semantic search for notes by content similarity."""
@@ -779,8 +753,8 @@ class ArchRAGOrchestrator:
             {
                 "id": n.id,
                 "content": n.content[:200] + ("..." if len(n.content) > 200 else ""),
-                "context": n.context,
                 "tags": n.tags,
+                "category": n.category,
             }
             for n in notes
         ]

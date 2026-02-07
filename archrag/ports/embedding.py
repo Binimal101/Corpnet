@@ -19,3 +19,10 @@ class EmbeddingPort(ABC):
     @abstractmethod
     def dimension(self) -> int:
         """Return the dimensionality of the embedding space."""
+    
+    def model_name(self) -> str:
+        """Return the name/identifier of the embedding model.
+        
+        Default implementation returns empty string. Adapters should override.
+        """
+        return ""

@@ -221,8 +221,6 @@ def add_note(
     category: str | None = None,
     tags: list[str] | None = None,
     keywords: list[str] | None = None,
-    enable_linking: bool = True,
-    enable_evolution: bool = True,
     skip_kg: bool = False,
     rebuild_hierarchy: bool = False,
 ) -> str:
@@ -233,18 +231,14 @@ def add_note(
 
     Unlike 'add' which batches documents for later indexing,
     this immediately creates an enriched MemoryNote with:
-    - Auto-generated keywords, context, and tags
+    - Auto-generated keywords and tags
     - TextChunks for entity/relation extraction
-    - Links to semantically related memories
-    - Optional evolution of related notes
 
     Args:
         content: The main text content of the memory.
         category: Optional classification category.
         tags: Optional list of user-provided tags (merged with LLM-generated).
         keywords: Optional list of user-provided keywords (merged with LLM-generated).
-        enable_linking: Whether to find and link related notes (default: True).
-        enable_evolution: Whether to update related notes (default: True).
         skip_kg: If True, only create MemoryNote without KG extraction (default: False).
         rebuild_hierarchy: Whether to rebuild clustering/C-HNSW after adding (default: False).
     """
@@ -261,8 +255,6 @@ def add_note(
     try:
         result = orch.add_memory_note(
             input_data,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
             skip_kg=skip_kg,
             rebuild_hierarchy=rebuild_hierarchy,
         )
@@ -294,14 +286,12 @@ def get_note(note_id: str) -> str:
     return (
         f"ID: {result['id']}\n"
         f"Content: {result['content']}\n"
-        f"Context: {result['context']}\n"
         f"Keywords: {result['keywords']}\n"
         f"Tags: {result['tags']}\n"
         f"Category: {result['category']}\n"
-        f"Links: {len(result['links'])} related notes\n"
-        f"Timestamp: {result['timestamp']}\n"
-        f"Last accessed: {result['last_accessed']}\n"
-        f"Retrieval count: {result['retrieval_count']}"
+        f"Last updated: {result.get('last_updated', 'N/A')}\n"
+        f"Retrieval count: {result['retrieval_count']}\n"
+        f"Embedding model: {result.get('embedding_model', 'N/A')}"
     )
 
 
@@ -498,8 +488,6 @@ def sync_database(
     tables: list[str] | None = None,
     text_columns: dict[str, list[str]] | None = None,
     incremental: bool = True,
-    enable_linking: bool = True,
-    enable_evolution: bool = True,
 ) -> str:
     """Sync records from the connected database into ArchRAG.
 
@@ -516,8 +504,6 @@ def sync_database(
                       If None, auto-detects text columns from schema.
         incremental: If True, only sync new/changed records since last sync.
                      If False, performs a full sync (re-imports everything).
-        enable_linking: Whether to create links between notes (default: True).
-        enable_evolution: Whether to evolve related notes (default: True).
     """
     orch, _ = _get_orchestrator()
 
@@ -526,8 +512,6 @@ def sync_database(
             tables=tables,
             text_columns_map=text_columns,
             incremental=incremental,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
         )
 
         tables_synced = result.get("tables_synced", [])
@@ -588,8 +572,6 @@ def enable_auto_sync(
     poll_interval: int = 300,
     tables: list[str] | None = None,
     text_columns: dict[str, list[str]] | None = None,
-    enable_linking: bool = True,
-    enable_evolution: bool = False,
 ) -> str:
     """Enable automatic background syncing of database.
 
@@ -601,8 +583,6 @@ def enable_auto_sync(
         poll_interval: Seconds between polls (default: 300 = 5 minutes).
         tables: Specific tables to monitor. If None, monitors all tables.
         text_columns: Map of table name -> columns for text extraction.
-        enable_linking: Whether to create links between notes (default: True).
-        enable_evolution: Whether to evolve existing notes (default: False).
     """
     orch, _ = _get_orchestrator()
 
@@ -611,15 +591,11 @@ def enable_auto_sync(
             poll_interval=float(poll_interval),
             tables=tables,
             text_columns_map=text_columns,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
         )
         return (
             f"Auto-sync ENABLED\n"
             f"Poll interval: {config['poll_interval']}s\n"
-            f"Tables: {config['tables'] or 'all'}\n"
-            f"Linking: {config['enable_linking']}\n"
-            f"Evolution: {config['enable_evolution']}"
+            f"Tables: {config['tables'] or 'all'}"
         )
     except RuntimeError as e:
         return f"Error: {e}"
@@ -643,8 +619,6 @@ def configure_auto_sync(
     poll_interval: int | None = None,
     tables: list[str] | None = None,
     text_columns: dict[str, list[str]] | None = None,
-    enable_linking: bool | None = None,
-    enable_evolution: bool | None = None,
 ) -> str:
     """Update auto-sync configuration without enabling/disabling.
 
@@ -652,8 +626,6 @@ def configure_auto_sync(
         poll_interval: Seconds between polls.
         tables: Specific tables to monitor.
         text_columns: Map of table name -> columns for text extraction.
-        enable_linking: Whether to create links between notes.
-        enable_evolution: Whether to evolve existing notes.
     """
     orch, _ = _get_orchestrator()
 
@@ -662,15 +634,11 @@ def configure_auto_sync(
             poll_interval=float(poll_interval) if poll_interval else None,
             tables=tables,
             text_columns_map=text_columns,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
         )
         return (
             f"Auto-sync configuration updated:\n"
             f"Poll interval: {config['poll_interval']}s\n"
-            f"Tables: {config['tables'] or 'all'}\n"
-            f"Linking: {config['enable_linking']}\n"
-            f"Evolution: {config['enable_evolution']}"
+            f"Tables: {config['tables'] or 'all'}"
         )
     except RuntimeError as e:
         return f"Error: {e}"
@@ -697,8 +665,6 @@ def get_auto_sync_status() -> str:
             f"\nConfiguration:",
             f"  Poll interval: {cfg['poll_interval']}s",
             f"  Tables: {cfg['tables'] or 'all'}",
-            f"  Linking: {cfg['enable_linking']}",
-            f"  Evolution: {cfg['enable_evolution']}",
         ])
 
     if status.get("stats"):

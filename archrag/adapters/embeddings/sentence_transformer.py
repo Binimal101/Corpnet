@@ -11,6 +11,7 @@ class SentenceTransformerEmbedding(EmbeddingPort):
     def __init__(self, model_name: str = "nomic-embed-text-v1.5", device: str = "cpu"):
         from sentence_transformers import SentenceTransformer  # lazy import
 
+        self._model_name = model_name
         self._model = SentenceTransformer(model_name, trust_remote_code=True)
         self._model.to(device)
         self._dim: int = self._model.get_sentence_embedding_dimension()  # type: ignore[assignment]
@@ -25,3 +26,6 @@ class SentenceTransformerEmbedding(EmbeddingPort):
 
     def dimension(self) -> int:
         return self._dim
+    
+    def model_name(self) -> str:
+        return self._model_name

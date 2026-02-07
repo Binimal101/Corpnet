@@ -39,20 +39,17 @@ class SQLiteMemoryNoteStore(MemoryNoteStorePort):
             CREATE TABLE IF NOT EXISTS memory_notes (
                 id                TEXT PRIMARY KEY,
                 content           TEXT NOT NULL,
-                timestamp         TEXT NOT NULL,
-                last_accessed     TEXT,
+                last_updated      TEXT,
                 keywords          TEXT NOT NULL DEFAULT '[]',
-                context           TEXT NOT NULL DEFAULT '',
                 tags              TEXT NOT NULL DEFAULT '[]',
                 category          TEXT NOT NULL DEFAULT '',
-                links             TEXT NOT NULL DEFAULT '{}',
                 retrieval_count   INTEGER NOT NULL DEFAULT 0,
-                evolution_history TEXT NOT NULL DEFAULT '[]',
-                embedding         TEXT
+                embedding         TEXT,
+                embedding_model   TEXT NOT NULL DEFAULT ''
             );
 
             CREATE INDEX IF NOT EXISTS idx_notes_category ON memory_notes(category);
-            CREATE INDEX IF NOT EXISTS idx_notes_timestamp ON memory_notes(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_notes_last_updated ON memory_notes(last_updated);
             """
         )
         self._conn.commit()
@@ -62,16 +59,13 @@ class SQLiteMemoryNoteStore(MemoryNoteStorePort):
         return MemoryNote(
             id=row[0],
             content=row[1],
-            timestamp=row[2],
-            last_accessed=row[3],
-            keywords=json.loads(row[4]) if row[4] else [],
-            context=row[5] or "",
-            tags=json.loads(row[6]) if row[6] else [],
-            category=row[7] or "",
-            links=json.loads(row[8]) if row[8] else {},
-            retrieval_count=row[9] or 0,
-            evolution_history=json.loads(row[10]) if row[10] else [],
-            embedding=json.loads(row[11]) if row[11] else None,
+            last_updated=row[2],
+            keywords=json.loads(row[3]) if row[3] else [],
+            tags=json.loads(row[4]) if row[4] else [],
+            category=row[5] or "",
+            retrieval_count=row[6] or 0,
+            embedding=json.loads(row[7]) if row[7] else None,
+            embedding_model=row[8] or "",
         )
 
     def _note_to_row(self, note: MemoryNote) -> tuple:
@@ -79,16 +73,13 @@ class SQLiteMemoryNoteStore(MemoryNoteStorePort):
         return (
             note.id,
             note.content,
-            note.timestamp,
-            note.last_accessed,
+            note.last_updated,
             json.dumps(note.keywords),
-            note.context,
             json.dumps(note.tags),
             note.category,
-            json.dumps(note.links),
             note.retrieval_count,
-            json.dumps(note.evolution_history),
             json.dumps(note.embedding) if note.embedding else None,
+            note.embedding_model,
         )
 
     # ── CRUD ──
@@ -96,9 +87,9 @@ class SQLiteMemoryNoteStore(MemoryNoteStorePort):
     def save_note(self, note: MemoryNote) -> None:
         self._conn.execute(
             """INSERT OR REPLACE INTO memory_notes 
-               (id, content, timestamp, last_accessed, keywords, context, 
-                tags, category, links, retrieval_count, evolution_history, embedding)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               (id, content, last_updated, keywords, tags, category, 
+                retrieval_count, embedding, embedding_model)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             self._note_to_row(note),
         )
         self._conn.commit()

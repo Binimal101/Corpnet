@@ -82,9 +82,6 @@ class DatabaseSyncService:
         self,
         tables: list[str] | None = None,
         text_columns_map: dict[str, list[str]] | None = None,
-        *,
-        enable_linking: bool = True,
-        enable_evolution: bool = True,
     ) -> SyncResult:
         """Perform a full sync of specified tables.
 
@@ -94,8 +91,6 @@ class DatabaseSyncService:
             tables: Tables to sync. If None, syncs all tables.
             text_columns_map: Map of table -> list of text columns.
                 If not provided, auto-detects text columns.
-            enable_linking: Whether to create links between notes.
-            enable_evolution: Whether to evolve existing notes.
 
         Returns:
             SyncResult with statistics and any errors.
@@ -130,8 +125,6 @@ class DatabaseSyncService:
                 table,
                 text_columns,
                 full_sync=True,
-                enable_linking=enable_linking,
-                enable_evolution=enable_evolution,
             )
 
             result.records_added += table_result.records_added
@@ -152,9 +145,6 @@ class DatabaseSyncService:
         self,
         tables: list[str] | None = None,
         text_columns_map: dict[str, list[str]] | None = None,
-        *,
-        enable_linking: bool = True,
-        enable_evolution: bool = True,
     ) -> SyncResult:
         """Perform incremental sync, only importing new/changed records.
 
@@ -163,8 +153,6 @@ class DatabaseSyncService:
         Args:
             tables: Tables to sync. If None, syncs all tables.
             text_columns_map: Map of table -> list of text columns.
-            enable_linking: Whether to create links between notes.
-            enable_evolution: Whether to evolve existing notes.
 
         Returns:
             SyncResult with statistics and any errors.
@@ -196,8 +184,6 @@ class DatabaseSyncService:
                 table,
                 text_columns,
                 full_sync=False,
-                enable_linking=enable_linking,
-                enable_evolution=enable_evolution,
             )
 
             result.records_added += table_result.records_added
@@ -252,8 +238,6 @@ class DatabaseSyncService:
         text_columns: list[str],
         *,
         full_sync: bool,
-        enable_linking: bool,
-        enable_evolution: bool,
     ) -> SyncResult:
         """Sync a single table."""
         result = SyncResult(tables_synced=[table])
@@ -298,11 +282,7 @@ class DatabaseSyncService:
             # Process batch
             for record in records:
                 try:
-                    self._process_record(
-                        record,
-                        enable_linking=enable_linking,
-                        enable_evolution=enable_evolution,
-                    )
+                    self._process_record(record)
                     result.records_added += 1
                     total_count += 1
 
@@ -335,9 +315,6 @@ class DatabaseSyncService:
     def _process_record(
         self,
         record: ExternalRecord,
-        *,
-        enable_linking: bool,
-        enable_evolution: bool,
     ) -> None:
         """Process an external record through the unified ingestion pipeline.
         
@@ -349,11 +326,7 @@ class DatabaseSyncService:
             return
 
         # Use unified pipeline: Note → Chunks → KG
-        note = self._ingestion_pipeline.ingest_from_external_record(
-            record,
-            enable_linking=enable_linking,
-            enable_evolution=enable_evolution,
-        )
+        note = self._ingestion_pipeline.ingest_from_external_record(record)
         log.debug("Ingested record %s as note %s through unified pipeline", record.id, note.id)
 
     def _get_text_columns(

@@ -188,45 +188,39 @@ class MemoryNote:
 
     Implements the memory model from arXiv 2502.12110 (Section 3.1):
     - content (c_i): Original interaction content
-    - timestamp (t_i): Creation time
     - keywords (K_i): LLM-generated key concepts
     - tags (G_i): LLM-generated categorization tags
-    - context (X_i): LLM-generated contextual description
-    - links (L_i): Set of linked memory IDs
     - embedding (e_i): Dense vector for similarity matching
+    - embedding_model: Model used to generate the embedding
     """
 
     content: str
     id: str = field(default_factory=_uid)
-    timestamp: str = field(default_factory=_now_timestamp)
-    last_accessed: str | None = None
+    last_updated: str | None = None
     keywords: list[str] = field(default_factory=list)
-    context: str = ""
     tags: list[str] = field(default_factory=list)
     category: str = ""
-    links: dict[str, str] = field(default_factory=dict)  # note_id -> relation_type
     retrieval_count: int = 0
-    evolution_history: list[dict[str, Any]] = field(default_factory=list)
     embedding: list[float] | None = None
+    embedding_model: str = ""  # Model identifier (e.g., "text-embedding-3-small")
 
     def to_document(self) -> dict[str, Any]:
         """Convert to a document dict for KG construction pipeline."""
         return {
             "text": self.content,
-            "title": self.context or f"Note {self.id}",
+            "title": f"Note {self.id}",
             "id": self.id,
             "metadata": {
                 "keywords": self.keywords,
                 "tags": self.tags,
                 "category": self.category,
-                "timestamp": self.timestamp,
             },
         }
 
     def increment_retrieval(self) -> None:
         """Update access stats when retrieved."""
         self.retrieval_count += 1
-        self.last_accessed = _now_timestamp()
+        self.last_updated = _now_timestamp()
 
 
 # ── External Database Connector Models ──────────────────────────────────────

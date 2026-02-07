@@ -30,3 +30,6 @@ class OpenAIEmbedding(EmbeddingPort):
 
     def dimension(self) -> int:
         return self._dim
+    
+    def model_name(self) -> str:
+        return self._model
