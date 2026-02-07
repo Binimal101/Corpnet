@@ -8,7 +8,7 @@ build upper-level graph, repeat.  Produces a CommunityHierarchy.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -31,6 +31,11 @@ from archrag.prompts.summarization import (
 
 log = logging.getLogger(__name__)
 
+# Type alias for visualization callback
+VisualizationCallback = Callable[
+    [int, list[str], list[str], np.ndarray, list[int]], None
+]
+
 
 class HierarchicalClusteringService:
     """Detect attributed communities and organise them hierarchically."""
@@ -46,6 +51,7 @@ class HierarchicalClusteringService:
         max_levels: int = 5,
         similarity_threshold: float = 0.7,
         min_nodes_to_continue: int = 3,
+        visualization_callback: VisualizationCallback | None = None,
     ):
         self._llm = llm
         self._embedding = embedding
@@ -55,8 +61,21 @@ class HierarchicalClusteringService:
         self._max_levels = max_levels
         self._sim_threshold = similarity_threshold
         self._min_nodes = min_nodes_to_continue
+        self._viz_callback = visualization_callback
 
     # ── public ──
+
+    def set_visualization_callback(self, callback: VisualizationCallback | None) -> None:
+        """Set a callback for real-time visualization during clustering.
+        
+        The callback receives:
+            - level: int - the current hierarchy level
+            - node_ids: list[str] - IDs of nodes at this level
+            - labels: list[str] - display labels for nodes
+            - embeddings: np.ndarray - embedding vectors (n_nodes, n_dims)
+            - cluster_assignments: list[int] - cluster ID for each node
+        """
+        self._viz_callback = callback
 
     def build(self, kg: KnowledgeGraph | None = None) -> CommunityHierarchy:
         """Run the iterative hierarchical clustering (Algorithm 1)."""
@@ -122,6 +141,32 @@ class HierarchicalClusteringService:
                 level_communities.append(community)
 
             hierarchy.levels.append(level_communities)
+            
+            # Invoke visualization callback if provided
+            if self._viz_callback is not None:
+                try:
+                    # Prepare data for visualization
+                    node_ids_list = list(current_nodes.keys())
+                    labels_list = [current_nodes[nid].text for nid in node_ids_list]
+                    embeddings_array = np.stack([current_nodes[nid].embedding for nid in node_ids_list])
+                    
+                    # Create cluster assignments from communities_ids
+                    node_to_cluster: dict[str, int] = {}
+                    for cluster_idx, comm_member_ids in enumerate(communities_ids):
+                        for mid in comm_member_ids:
+                            node_to_cluster[mid] = cluster_idx
+                    
+                    cluster_assignments = [node_to_cluster.get(nid, 0) for nid in node_ids_list]
+                    
+                    self._viz_callback(
+                        level,
+                        node_ids_list,
+                        labels_list,
+                        embeddings_array,
+                        cluster_assignments,
+                    )
+                except Exception as exc:
+                    log.warning("Visualization callback failed: %s", exc)
 
             # Step 5: Build upper-level graph — each community is a node
             upper_nodes: dict[str, _NodeInfo] = {}
