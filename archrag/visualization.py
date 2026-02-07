@@ -38,7 +38,7 @@ def _colour(level: int) -> str:
 
 
 def _wrap(text: str, width: int = 22) -> str:
-    """Wrap *text* into multiple lines for Plotly labels using <br>."""
+    """Wrap *text* into multiple lines for Plotly SVG labels using newlines."""
     words = text.split()
     lines: list[str] = []
     cur = ""
@@ -50,7 +50,27 @@ def _wrap(text: str, width: int = 22) -> str:
             cur = f"{cur} {w}" if cur else w
     if cur:
         lines.append(cur)
-    return "<br>".join(lines)
+    return "\n".join(lines)
+
+
+def _short_label(text: str, max_words: int = 6) -> str:
+    """Return the first *max_words* words of *text*, adding '…' if truncated."""
+    # Strip common LLM filler prefixes
+    for prefix in ("The community centers around ", "The community revolves around ",
+                   "The community is centered on ", "The community focuses on ",
+                   "The community is centered around ", "The community centers on ",
+                   "The community is focused on ", "The community celebrates ",
+                   "The community honors ", "The community emphasizes ",
+                   "This community highlights ", "This community centers on ",
+                   "This community emphasizes ", "This community is centered around ",
+                   "This community "):
+        if text.lower().startswith(prefix.lower()):
+            text = text[len(prefix):]
+            break
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]) + "…"
 
 
 # ── Data loading ────────────────────────────────────────────────────────────
@@ -152,8 +172,9 @@ def _make_dag_figure(comms, level_ids):
             x, y = pos[cid]
             data = G.nodes[cid]
             xs.append(x); ys.append(y)
-            texts.append(_wrap(data.get("label", cid[:8])))
-            hovers.append(data.get('summary', ''))
+            raw_summary = data.get("summary", cid[:8])
+            texts.append(_wrap(_short_label(raw_summary), 18))
+            hovers.append(raw_summary)
             sizes.append(max(18, min(50, 12 + len(data.get("member_ids", [])) * 3)))
 
         # Legend label — annotate bottom vs top of hierarchy

@@ -1,18 +1,21 @@
 """Prompts for community summarisation."""
 
 COMMUNITY_SUMMARY_SYSTEM = (
-    "You produce very short community labels. "
-    "Output only the summary — no preamble, no bullet points, no commentary."
+    "You are a concise labeler. "
+    "Reply with ONLY the label — nothing else. "
+    "Never exceed 10 words. Never start with 'The community' or 'This community'."
 )
 
 COMMUNITY_SUMMARY_PROMPT = """\
-Below are the members of a single community. Write ONE short sentence (max 15 words) \
-that captures what these members have in common. Do NOT mention other communities, \
-hierarchy levels, or how this group relates to anything outside it. \
-Just state the shared topic or theme.
+Write a label (MAX 10 words) describing what these members share.
+Rules:
+- 10 words or fewer, period.
+- No filler phrases like "centers around", "revolves around", "is focused on".
+- Just name the topic directly, e.g. "Einstein's contributions to relativity and physics".
+- Do NOT reference hierarchy, levels, communities, or anything outside the list.
 
 Members:
 {entities_text}
 
-One-sentence summary:
+Label:
 """

@@ -59,6 +59,7 @@ _ws_clients: set[WebSocket] = set()
 
 async def _ws_broadcast(message: str = "refresh") -> None:
     """Send a message to every connected visualisation client."""
+    global _ws_clients
     dead: set[WebSocket] = set()
     for ws in _ws_clients:
         try:
@@ -75,8 +76,11 @@ def _broadcast_refresh_sync() -> None:
         loop = asyncio.get_running_loop()
         loop.create_task(_ws_broadcast("refresh"))
     except RuntimeError:
-        # No running loop (pure background thread) — spin one up briefly
-        asyncio.run(_ws_broadcast("refresh"))
+        # No running loop (pure background thread) — fire and forget
+        try:
+            asyncio.run(_ws_broadcast("refresh"))
+        except Exception:
+            log.debug("[ws] broadcast skipped — no clients or loop unavailable")
 
 
 def _regen_viz() -> None:
