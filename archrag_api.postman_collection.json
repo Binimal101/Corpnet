@@ -1,0 +1,440 @@
+{
+	"info": {
+		"_postman_id": "archrag-api-collection",
+		"name": "ArchRAG API",
+		"description": "ArchRAG: Attributed Community-based Hierarchical Retrieval-Augmented Generation.\n\nA REST API for building, querying, and managing a knowledge graph with hierarchical community clustering and C-HNSW vector indexing.\n\n**Base URL**: `http://localhost:8000`\n**Swagger UI**: `http://localhost:8000/docs`",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "System",
+			"description": "Health check and database info endpoints.",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Quick liveness check. Returns immediately without heavy computation."
+					},
+					"response": [
+						{
+							"name": "Healthy",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"status\": \"healthy\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Database Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/info",
+							"host": ["{{base_url}}"],
+							"path": ["info"]
+						},
+						"description": "Returns counts of entities, relations, chunks, hierarchy levels, queue status, and reindex state."
+					},
+					"response": [
+						{
+							"name": "Info Response",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"entities\": 109,\n  \"relations\": 94,\n  \"chunks\": 18,\n  \"hierarchy_levels\": 5,\n  \"pending_in_queue\": 0,\n  \"reindex_status\": \"idle\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Indexing",
+			"description": "Endpoints for building and managing the knowledge graph index.",
+			"item": [
+				{
+					"name": "Full Index Rebuild",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"corpus_path\": \"corpus.jsonl\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/index",
+							"host": ["{{base_url}}"],
+							"path": ["index"]
+						},
+						"description": "Wipe all existing data and rebuild the entire pipeline from a corpus file (JSONL or JSON array). Each document needs at least a `text` field.\n\n**Warning**: This is a destructive operation."
+					},
+					"response": [
+						{
+							"name": "Index Complete",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"message\": \"Indexing complete.\",\n  \"entities\": 95,\n  \"relations\": 84,\n  \"chunks\": 15,\n  \"hierarchy_levels\": 5\n}"
+						},
+						{
+							"name": "File Not Found",
+							"status": "Not Found",
+							"code": 404,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"detail\": \"Corpus file not found: missing.jsonl\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Add Documents",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"documents\": [\n    {\n      \"text\": \"Max Planck originated quantum theory, which won him the Nobel Prize in Physics in 1918.\"\n    },\n    {\n      \"text\": \"Werner Heisenberg formulated the uncertainty principle in 1927.\",\n      \"source\": \"wikipedia\"\n    },\n    {\n      \"text\": \"Erwin Schrödinger developed his wave equation in 1926.\",\n      \"source\": \"textbook\",\n      \"id\": 42\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/add",
+							"host": ["{{base_url}}"],
+							"path": ["add"]
+						},
+						"description": "Enqueue one or more documents for batched indexing. Documents sit in a pending queue and are flushed automatically every 3 minutes, or immediately when `/reindex` is called.\n\nEach document must have a `text` field. Extra fields are preserved as metadata."
+					},
+					"response": [
+						{
+							"name": "Documents Enqueued",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"enqueued\": 3,\n  \"pending\": 3,\n  \"message\": \"Enqueued 3 document(s). Call /reindex to flush immediately.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Reindex (Flush Queue)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/reindex",
+							"host": ["{{base_url}}"],
+							"path": ["reindex"]
+						},
+						"description": "Immediately flush the pending document queue and trigger a full reindex (KG extraction → hierarchical clustering → C-HNSW rebuild). Runs in a background thread using blue/green snapshot swap — reads are never blocked.\n\nUse `GET /info` to monitor progress."
+					},
+					"response": [
+						{
+							"name": "Reindex Started",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"message\": \"Reindex started in background for 3 document(s).\",\n  \"pending_before\": 3,\n  \"status\": \"running\"\n}"
+						},
+						{
+							"name": "Queue Empty",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"message\": \"Queue is empty — nothing to reindex.\",\n  \"pending_before\": 0,\n  \"status\": \"done: 3 doc(s) reindexed. 112 entities, 98 relations, 21 chunks, 5 levels.\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Retrieval",
+			"description": "Query and search the knowledge graph.",
+			"item": [
+				{
+					"name": "Ask a Question",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"question\": \"What did Marie Curie discover?\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/query",
+							"host": ["{{base_url}}"],
+							"path": ["query"]
+						},
+						"description": "Answer a natural-language question using hierarchical search across the C-HNSW index followed by LLM-based adaptive filtering. Returns a synthesised answer grounded in the knowledge graph."
+					},
+					"response": [
+						{
+							"name": "Query Answer",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"question\": \"What did Marie Curie discover?\",\n  \"answer\": \"Marie Curie is renowned for her groundbreaking discoveries of two elements: polonium and radium...\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Search Entities",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"Einstein\",\n  \"search_type\": \"entities\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/search",
+							"host": ["{{base_url}}"],
+							"path": ["search"]
+						},
+						"description": "Case-insensitive substring search across entities only."
+					},
+					"response": [
+						{
+							"name": "Entities Found",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"entities\": [\n    {\n      \"id\": \"e442ea7caf37\",\n      \"name\": \"Albert Einstein\",\n      \"type\": \"PERSON\",\n      \"description\": \"A theoretical physicist known for developing the theory of special relativity.\"\n    }\n  ],\n  \"chunks\": null\n}"
+						}
+					]
+				},
+				{
+					"name": "Search Chunks",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"relativity\",\n  \"search_type\": \"chunks\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/search",
+							"host": ["{{base_url}}"],
+							"path": ["search"]
+						},
+						"description": "Case-insensitive substring search across text chunks only."
+					},
+					"response": [
+						{
+							"name": "Chunks Found",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"entities\": null,\n  \"chunks\": [\n    {\n      \"id\": \"f2f3265996c0\",\n      \"text\": \"Albert Einstein was a theoretical physicist born in Ulm, Germany in 1879...\",\n      \"source\": \"\"\n    }\n  ]\n}"
+						}
+					]
+				},
+				{
+					"name": "Search All",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"quantum\",\n  \"search_type\": \"all\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/search",
+							"host": ["{{base_url}}"],
+							"path": ["search"]
+						},
+						"description": "Case-insensitive substring search across both entities and chunks."
+					},
+					"response": [
+						{
+							"name": "All Results",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"entities\": [\n    {\n      \"id\": \"abc123\",\n      \"name\": \"Quantum Mechanics\",\n      \"type\": \"CONCEPT\",\n      \"description\": \"A fundamental theory in physics.\"\n    }\n  ],\n  \"chunks\": [\n    {\n      \"id\": \"def456\",\n      \"text\": \"Quantum mechanics describes the behavior of particles at atomic scales...\",\n      \"source\": \"\"\n    }\n  ]\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Management",
+			"description": "Entity and database management endpoints.",
+			"item": [
+				{
+					"name": "Remove Entity",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/entities/Albert Einstein",
+							"host": ["{{base_url}}"],
+							"path": ["entities", "Albert Einstein"]
+						},
+						"description": "Delete an entity by exact name from the knowledge graph. All relations involving this entity are also cascade-deleted. The hierarchy visualisation is regenerated automatically."
+					},
+					"response": [
+						{
+							"name": "Entity Removed",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"removed\": true,\n  \"entity_name\": \"Albert Einstein\",\n  \"message\": \"Removed entity 'Albert Einstein' and its relations.\"\n}"
+						},
+						{
+							"name": "Entity Not Found",
+							"status": "Not Found",
+							"code": 404,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"detail\": \"Entity 'Unknown Person' not found in the knowledge graph.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Clear Database",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/clear",
+							"host": ["{{base_url}}"],
+							"path": ["clear"]
+						},
+						"description": "**Destructive.** Wipe ALL entities, relations, chunks, communities, and vectors from the database. The knowledge graph will be completely empty afterwards. The hierarchy visualisation is regenerated automatically (will show an empty-state page)."
+					},
+					"response": [
+						{
+							"name": "Database Cleared",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "application/json"}
+							],
+							"body": "{\n  \"message\": \"Database cleared.\",\n  \"entities\": 0,\n  \"relations\": 0,\n  \"chunks\": 0,\n  \"hierarchy_levels\": 0\n}"
+						}
+					]
+				},
+				{
+					"name": "Hierarchy Visualisation",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/visualize",
+							"host": ["{{base_url}}"],
+							"path": ["visualize"]
+						},
+						"description": "Returns an interactive Plotly HTML page with DAG, Treemap, and Sunburst views of the community hierarchy. The visualisation is auto-regenerated after every mutation (index, reindex, remove, clear). Open the response in a browser for the interactive view."
+					},
+					"response": [
+						{
+							"name": "Visualisation HTML",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{"key": "Content-Type", "value": "text/html; charset=utf-8"}
+							],
+							"body": "<!DOCTYPE html><html><!-- Interactive Plotly visualisation --></html>"
+						}
+					]
+				}
+			]
+		}
+	]
+}

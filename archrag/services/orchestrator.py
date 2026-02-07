@@ -285,6 +285,29 @@ class ArchRAGOrchestrator:
         log.info("Deleted entity '%s' (id=%s) and its relations.", entity_name, entity.id)
         return True
 
+    def clear_all(self) -> dict[str, Any]:
+        """Wipe **all** data (entities, relations, chunks, communities, vectors).
+
+        Uses the write lock so no concurrent writers interfere, then
+        atomically swaps in a fresh snapshot.
+        """
+        log.info("Clearing all data …")
+        with self._write_lock:
+            snap = self._snapshot
+            snap.graph_store.clear()
+            snap.doc_store.clear()
+            snap.vector_index.clear()
+
+            # Rebuild an empty snapshot so sub-services are consistent
+            fresh = self._build_snapshot(
+                snap.graph_store, snap.doc_store, snap.vector_index,
+                chnsw_index=None,
+            )
+            self._snapshot = fresh
+
+        log.info("All data cleared.")
+        return self.stats()
+
     def search_entities(self, query: str) -> list[dict[str, str]]:
         """Search entities by name substring. Returns a simple dict list."""
         snap = self._snapshot
