@@ -184,3 +184,15 @@ class SQLiteGraphStore(GraphStorePort):
     def clear(self) -> None:
         self._conn.executescript("DELETE FROM relations; DELETE FROM entities;")
         self._conn.commit()
+
+    def delete_entity(self, entity_id: str) -> None:
+        self._conn.execute("DELETE FROM relations WHERE source_id=? OR target_id=?", (entity_id, entity_id))
+        self._conn.execute("DELETE FROM entities WHERE id=?", (entity_id,))
+        self._conn.commit()
+
+    def search_entities_by_name(self, query: str) -> list[Entity]:
+        cur = self._conn.execute(
+            "SELECT * FROM entities WHERE LOWER(name) LIKE LOWER(?)",
+            (f"%{query}%",),
+        )
+        return [self._row_to_entity(r) for r in cur.fetchall()]

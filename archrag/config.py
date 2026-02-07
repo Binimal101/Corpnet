@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
+
+# Load .env so OPENAI_API_KEY (and any future keys) are available
+load_dotenv()
 
 from archrag.ports.clustering import ClusteringPort
 from archrag.ports.document_store import DocumentStorePort

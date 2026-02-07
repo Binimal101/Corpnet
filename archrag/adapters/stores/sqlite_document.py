@@ -191,3 +191,17 @@ class SQLiteDocumentStore(DocumentStorePort):
             "DELETE FROM chunks; DELETE FROM communities; DELETE FROM meta;"
         )
         self._conn.commit()
+
+    def delete_chunk(self, chunk_id: str) -> None:
+        self._conn.execute("DELETE FROM chunks WHERE id=?", (chunk_id,))
+        self._conn.commit()
+
+    def search_chunks(self, query: str) -> list[TextChunk]:
+        cur = self._conn.execute(
+            "SELECT * FROM chunks WHERE LOWER(text) LIKE LOWER(?)",
+            (f"%{query}%",),
+        )
+        return [
+            TextChunk(id=r[0], text=r[1], source_doc=r[2], metadata=json.loads(r[3]))
+            for r in cur.fetchall()
+        ]

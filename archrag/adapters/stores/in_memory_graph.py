@@ -60,3 +60,14 @@ class InMemoryGraphStore(GraphStorePort):
     def clear(self) -> None:
         self._entities.clear()
         self._relations.clear()
+
+    def delete_entity(self, entity_id: str) -> None:
+        self._entities.pop(entity_id, None)
+        self._relations = [
+            r for r in self._relations
+            if r.source_id != entity_id and r.target_id != entity_id
+        ]
+
+    def search_entities_by_name(self, query: str) -> list[Entity]:
+        q = query.lower()
+        return [e for e in self._entities.values() if q in e.name.lower()]

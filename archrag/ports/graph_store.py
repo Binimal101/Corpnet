@@ -44,6 +44,16 @@ class GraphStorePort(ABC):
     @abstractmethod
     def get_neighbours(self, entity_id: str) -> list[Entity]: ...
 
+    # ── delete ──
+
+    @abstractmethod
+    def delete_entity(self, entity_id: str) -> None:
+        """Delete an entity and all its relations."""
+
+    @abstractmethod
+    def search_entities_by_name(self, query: str) -> list[Entity]:
+        """Case-insensitive substring search on entity names."""
+
     # ── lifecycle ──
 
     @abstractmethod

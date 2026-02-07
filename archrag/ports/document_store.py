@@ -55,6 +55,16 @@ class DocumentStorePort(ABC):
     @abstractmethod
     def get_meta(self, key: str) -> Any: ...
 
+    # ── delete ──
+
+    @abstractmethod
+    def delete_chunk(self, chunk_id: str) -> None:
+        """Remove a single chunk."""
+
+    @abstractmethod
+    def search_chunks(self, query: str) -> list[TextChunk]:
+        """Case-insensitive substring search on chunk text."""
+
     # ── lifecycle ──
 
     @abstractmethod

@@ -83,3 +83,10 @@ class InMemoryDocumentStore(DocumentStorePort):
         self._chunks.clear()
         self._communities.clear()
         self._meta.clear()
+
+    def delete_chunk(self, chunk_id: str) -> None:
+        self._chunks.pop(chunk_id, None)
+
+    def search_chunks(self, query: str) -> list[TextChunk]:
+        q = query.lower()
+        return [c for c in self._chunks.values() if q in c.text.lower()]
