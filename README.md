@@ -13,22 +13,22 @@ Create environment:
 python -m venv .venv
 ```
 
+Use *one* of the three following commands to activate the environment, depending on your specific CLI.
 
-Activate environment (for Mac/Linux):
-```sh
-source .venv/bin/activate
-```
+   Activate environment (for Mac/Linux):
+   ```sh
+   source .venv/bin/activate
+   ```
 
-Activate environment (for Windows Command Prompt):
-```cmd
-.venv\Scripts\activate
-```
+   Activate environment (for Windows Command Prompt):
+   ```cmd
+   .venv\Scripts\activate
+   ```
 
-Activate environment (for Windows Powershell):
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
+   Activate environment (for Windows Powershell):
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   ```
 
 Install dependencies:
 ```powershell
