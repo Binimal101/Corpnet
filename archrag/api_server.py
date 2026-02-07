@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -52,11 +52,40 @@ _VIZ_DB_PATH = str(_PROJECT_ROOT / "data" / "archrag.db")
 _VIZ_OUT_PATH = str(_PROJECT_ROOT / "data" / "hierarchy_viz.html")
 
 
+# ── WebSocket live-reload ────────────────────────────────────────────────────
+
+_ws_clients: set[WebSocket] = set()
+
+
+async def _ws_broadcast(message: str = "refresh") -> None:
+    """Send a message to every connected visualisation client."""
+    dead: set[WebSocket] = set()
+    for ws in _ws_clients:
+        try:
+            await ws.send_text(message)
+        except Exception:
+            dead.add(ws)
+    _ws_clients -= dead
+
+
+def _broadcast_refresh_sync() -> None:
+    """Thread-safe bridge: schedule a WS broadcast from a sync context."""
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_ws_broadcast("refresh"))
+    except RuntimeError:
+        # No running loop (pure background thread) — spin one up briefly
+        asyncio.run(_ws_broadcast("refresh"))
+
+
 def _regen_viz() -> None:
-    """Regenerate the hierarchy visualisation in the background."""
+    """Regenerate the hierarchy visualisation and notify browsers."""
     try:
         generate_visualization(db_path=_VIZ_DB_PATH, out_path=_VIZ_OUT_PATH)
         log.info("[viz] Hierarchy visualisation regenerated → %s", _VIZ_OUT_PATH)
+        _broadcast_refresh_sync()
+        log.info("[viz] WebSocket refresh broadcast sent to %d client(s)", len(_ws_clients))
     except Exception:
         log.exception("[viz] Failed to regenerate visualisation")
 
@@ -91,8 +120,14 @@ async def lifespan(app: FastAPI):
 
     log.info("Starting ingestion queue …")
     flush_interval = float(os.environ.get("ARCHRAG_FLUSH_INTERVAL", "180"))
+
+    def _reindex_and_regen(docs: list) -> None:
+        """Wrapper: index docs, then regen viz + broadcast to browsers."""
+        _orch.add_documents(docs)
+        _regen_viz()
+
     _queue = IngestionQueue(
-        reindex_fn=_orch.add_documents,
+        reindex_fn=_reindex_and_regen,
         flush_interval=flush_interval,
     )
     log.info("Ingestion queue ready (flush every %s s).", flush_interval)
@@ -506,13 +541,57 @@ async def clear_db():
 async def visualize():
     viz_path = Path(_VIZ_OUT_PATH)
     if not viz_path.exists():
-        # Generate on first request
         _regen_viz()
     if viz_path.exists():
         html = viz_path.read_text(encoding="utf-8")
     else:
         html = "<html><body><h2>No hierarchy data. Index a corpus first.</h2></body></html>"
+
+    # Inject WebSocket live-reload client before </body>
+    ws_script = """
+<script>
+(function() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = proto + '//' + location.host + '/ws/viz';
+  let ws, reconnectTimer;
+
+  function connect() {
+    ws = new WebSocket(url);
+    ws.onmessage = function(e) {
+      if (e.data === 'refresh') {
+        console.log('[ArchRAG] DB changed — reloading visualisation…');
+        location.reload();
+      }
+    };
+    ws.onclose = function() {
+      console.log('[ArchRAG] WS closed, reconnecting in 3s…');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 3000);
+    };
+    ws.onerror = function() { ws.close(); };
+  }
+  connect();
+})();
+</script>
+"""
+    html = html.replace("</body>", ws_script + "</body>")
     return HTMLResponse(content=html)
+
+
+@app.websocket("/ws/viz")
+async def ws_viz(ws: WebSocket):
+    """WebSocket endpoint for live visualisation updates."""
+    await ws.accept()
+    _ws_clients.add(ws)
+    log.info("[ws] Visualisation client connected (%d total)", len(_ws_clients))
+    try:
+        while True:
+            await ws.receive_text()  # keep-alive; we only push
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _ws_clients.discard(ws)
+        log.info("[ws] Visualisation client disconnected (%d remaining)", len(_ws_clients))
 
 
 # ── Run directly ────────────────────────────────────────────────────────────
