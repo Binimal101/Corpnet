@@ -12,8 +12,9 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-# Load .env so OPENAI_API_KEY (and any future keys) are available
-load_dotenv()
+# Walk up from this file (archrag/config.py) to the project root and load .env
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 from archrag.ports.clustering import ClusteringPort
 from archrag.ports.document_store import DocumentStorePort

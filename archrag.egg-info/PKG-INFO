@@ -8,6 +8,7 @@ Description-Content-Type: text/markdown
 Requires-Dist: click>=8.1
 Requires-Dist: pyyaml>=6.0
 Requires-Dist: numpy>=1.24
+Requires-Dist: python-dotenv>=1.0
 Provides-Extra: ollama
 Requires-Dist: ollama>=0.3; extra == "ollama"
 Provides-Extra: openai
@@ -31,92 +32,137 @@ Requires-Dist: pytest-cov>=4.0; extra == "dev"
 
 # ArchRAG
 
-This repository contains code and data processing for the paper "ArchRAG: Attributed Community-based Hierarchical
-Retrieval-Augmented Generation"
+An implementation of **ArchRAG: Attributed Community-based Hierarchical Retrieval-Augmented Generation** ([arXiv 2502.09891](https://arxiv.org/abs/2502.09891)).
 
-ArchRAG is a novel graph-based RAG approach by using attributed communities organized hierarchically, and introduce a novel LLM-based hierarchical clustering method.
-For more details, check out our paper.
+Built with a **hexagonal / ports & adapters** architecture — every external dependency (LLM, embedding model, database, vector index, clustering algorithm) is behind an abstract port and can be swapped via config.
 
-Paper link: [Arxiv](https://arxiv.org/abs/2502.09891)
+## Quick Start
 
-## Setup Environment
+### 1. Create the virtual environment
 
-This project implements C-HNSW using a custom Faiss framework. Follow the steps below to set up the environment correctly.
-
-### 1. Create a Python 3.10 Environment
-
-We recommend using conda to manage the environment:
-
-```bash
-conda create -n archrag python=3.10 -y
-conda activate archrag
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[all,dev]"
 ```
 
-### 2. Install Dependencies
+### 2. Set your API key
 
-Install the required Python packages using:
+Create a `.env` file in the project root (loaded automatically via `python-dotenv`):
 
-```bash
-pip install -r requirements.txt
+```
+OPENAI_API_KEY=sk-...
 ```
 
-### 3. Install Custom Faiss for C-HNSW
+### 3. Configure
 
-The C-HNSW component requires a modified version of Faiss. Please refer to this [README](./HCHNSW/README.md) for installation instructions.
+Copy the example config and adjust as needed:
 
-```bash
-export PYTHONPATH=$(pwd):$PYTHONPATH
+```powershell
+copy config.example.yaml config.yaml
 ```
 
-## Running ArchRAG
+Default config uses OpenAI (`gpt-4o-mini` + `text-embedding-3-small`). See [config.example.yaml](config.example.yaml) for all adapter options (Ollama, SentenceTransformers, etc.).
 
-Using our ArchRAG framework requires a two-step, offline index and online retrieval.
+### 4. Prepare a corpus
 
-### Offline Index
+JSONL file, one document per line:
 
-Before constructing ArchRAG index, we first use Microsoft GraphRAG to extract KG from corpus, please refer to the source code and [instruction](./src/graphrag/README.md).
-
-We provide a bash for constructing ArchRAG index.
-
-```shell
-bash dataset/index.sh
+```jsonl
+{"text": "Albert Einstein developed the theory of special relativity in 1905."}
+{"text": "Marie Curie discovered polonium and radium."}
 ```
 
-### Online Retrieval
+Also supports `{"title": "...", "context": "..."}` format from the original paper, and JSON arrays.
 
-We provide a bash for online retrieval given a specific dataset.
+### 5. Run
 
-```shell
-bash dataset/query.sh
+```powershell
+# Build the full index (KG → hierarchical clustering → C-HNSW)
+archrag index corpus.jsonl
+
+# Ask a question
+archrag query "What did Einstein win the Nobel Prize for?"
 ```
 
-## Data format and Environment
+## CLI Reference
 
-Corpus
+| Command | Description |
+|---|---|
+| `archrag index <corpus>` | Build full index from a JSONL / JSON corpus file |
+| `archrag query "<question>"` | Answer a question using hierarchical search + adaptive filtering |
+| `archrag search "<term>"` | Search entities by name (substring match) |
+| `archrag search "<term>" -t chunks` | Search raw text chunks |
+| `archrag search "<term>" -t all` | Search both entities and chunks |
+| `archrag add <corpus>` | Add new documents to an existing index and re-index |
+| `archrag remove "<entity name>"` | Delete an entity and its relations from the KG |
+| `archrag info` | Show database stats and current configuration |
 
-```json
-{
-"title": "FIRST TITLE",
-"context": "FIRST TEXT",
-"id": 0
-}
-{
-"title": "SECOND TITLE",
-"context": "SECOND TEXT",
-"id": 1
-}
+Add `-v` for debug logging, `-c path/to/config.yaml` for a custom config:
+
+```powershell
+archrag -v -c my_config.yaml query "some question"
 ```
 
-Question
+## Architecture
 
-```json
-{
-"question": "QUESTION 1",
-"options": "DICT-style options for multiple-choice questions (Optional)",
-"answer": "ANSWER",
-"answer_idx":"Answer options for multiple-choice questions (Optional)",
-"id": 0
-}
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design document.
+
+```
+CLI (click)
+ │
+ ▼
+Orchestrator
+ ├── KG Construction Service
+ ├── Hierarchical Clustering Service  (Algorithm 1)
+ ├── C-HNSW Build Service             (Algorithm 3)
+ ├── Hierarchical Search Service       (Algorithm 2)
+ └── Adaptive Filtering Service        (Equations 1 & 2)
+      │
+      ▼
+   6 Ports (ABCs)
+      │
+      ▼
+   Swappable Adapters
 ```
 
-One can use GraphRAG to construct the Knowledge graph and use the "final_entity" and "final_relationship" file.
+### Ports & Adapters
+
+| Port | Adapters |
+|---|---|
+| **EmbeddingPort** | SentenceTransformers, OpenAI, Ollama |
+| **LLMPort** | OpenAI, Ollama |
+| **GraphStorePort** | SQLite, In-Memory |
+| **DocumentStorePort** | SQLite, In-Memory |
+| **VectorIndexPort** | NumPy (brute-force cosine) |
+| **ClusteringPort** | Leiden (via igraph + leidenalg) |
+
+## Project Structure
+
+```
+archrag/
+├── domain/models.py          # Pure dataclasses (Entity, Relation, Community, etc.)
+├── ports/                    # 6 abstract base classes
+├── adapters/
+│   ├── embeddings/           # SentenceTransformer, OpenAI, Ollama
+│   ├── llms/                 # OpenAI, Ollama
+│   ├── stores/               # SQLite & in-memory (graph + document)
+│   ├── indexes/              # NumPy vector index
+│   └── clustering/           # Leiden
+├── services/                 # Business logic (KG, clustering, C-HNSW, search, filtering)
+├── prompts/                  # LLM prompt templates
+├── config.py                 # YAML config + adapter factory + dotenv loading
+└── cli.py                    # Click CLI entry point
+tests/                        # 21 unit tests with mock ports
+```
+
+## Tests
+
+```powershell
+python -m pytest tests/ -v
+```
+
+## Paper Reference
+
+> **ArchRAG: Attributed Community-based Hierarchical Retrieval-Augmented Generation**
+> [arXiv:2502.09891](https://arxiv.org/abs/2502.09891)
