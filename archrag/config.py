@@ -132,14 +132,34 @@ def build_clustering(cfg: dict[str, Any]) -> ClusteringPort:
 
 def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
     """Load config and wire all adapters into the orchestrator."""
+    import logging
+    log = logging.getLogger(__name__)
+
     cfg = load_config(config_path)
 
+    log.info("  → building embedding adapter …")
     embedding = build_embedding(cfg.get("embedding", {}))
+    log.info("  ✓ embedding ready")
+
+    log.info("  → building LLM adapter …")
     llm = build_llm(cfg.get("llm", {}))
+    log.info("  ✓ LLM ready")
+
+    log.info("  → building graph store …")
     graph_store = build_graph_store(cfg.get("graph_store", {}))
+    log.info("  ✓ graph store ready")
+
+    log.info("  → building document store …")
     doc_store = build_document_store(cfg.get("document_store", {}))
+    log.info("  ✓ document store ready")
+
+    log.info("  → building vector index …")
     vector_index = build_vector_index(cfg.get("vector_index", {}))
+    log.info("  ✓ vector index ready")
+
+    log.info("  → building clustering …")
     clustering = build_clustering(cfg.get("clustering", {}))
+    log.info("  ✓ clustering ready")
 
     indexing_cfg = cfg.get("indexing", {})
     retrieval_cfg = cfg.get("retrieval", {})

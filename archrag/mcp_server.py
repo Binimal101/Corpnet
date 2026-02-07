@@ -1,7 +1,10 @@
 """ArchRAG FastMCP Server.
 
 Exposes the full ArchRAG pipeline as MCP tools:
-  - index, query, search, add, remove, reindex, info
+  - health, index, query, search, add, remove, reindex, info
+
+The orchestrator and ingestion queue are initialised eagerly at
+startup so every tool is ready to respond immediately.
 
 The `add` tool enqueues documents into a thread-safe
 IngestionQueue which auto-flushes every 3 minutes.
@@ -23,6 +26,9 @@ from fastmcp import FastMCP
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
+from archrag.config import build_orchestrator
+from archrag.services.ingestion_queue import IngestionQueue
+
 log = logging.getLogger(__name__)
 
 # ── Server singleton ──
@@ -37,36 +43,25 @@ mcp = FastMCP(
     ),
 )
 
-# ── Lazy globals (initialised on first tool call) ──
+# ── Eager initialisation (runs once at startup) ──
 
-_orch = None
-_queue = None
-_init_lock = __import__("threading").Lock()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+_config_path = os.environ.get("ARCHRAG_CONFIG", "config.yaml")
+log.info("Loading config from %s …", _config_path)
 
-def _get_orchestrator():
-    """Lazy-init the orchestrator + ingestion queue (thread-safe)."""
-    global _orch, _queue
-    if _orch is not None:
-        return _orch, _queue
+log.info("Building orchestrator (embedding, LLM, stores) …")
+_orch = build_orchestrator(_config_path)
+log.info("Orchestrator ready.")
 
-    with _init_lock:
-        # Double-check after acquiring lock
-        if _orch is not None:
-            return _orch, _queue
+log.info("Starting ingestion queue …")
+_queue = IngestionQueue(
+    reindex_fn=_orch.add_documents,
+    flush_interval=float(os.environ.get("ARCHRAG_FLUSH_INTERVAL", "180")),
+)
+log.info("Ingestion queue ready (flush every %s s).", os.environ.get("ARCHRAG_FLUSH_INTERVAL", "180"))
 
-        from archrag.config import build_orchestrator
-        from archrag.services.ingestion_queue import IngestionQueue
-
-        config_path = os.environ.get("ARCHRAG_CONFIG", "config.yaml")
-        log.info("Initialising ArchRAG orchestrator from %s", config_path)
-        _orch = build_orchestrator(config_path)
-
-        _queue = IngestionQueue(
-            reindex_fn=_orch.add_documents,
-            flush_interval=float(os.environ.get("ARCHRAG_FLUSH_INTERVAL", "180")),
-        )
-        return _orch, _queue
+log.info("All components initialised — MCP server is ready.")
 
 
 # ── MCP Tools ──
@@ -81,9 +76,8 @@ def index(corpus_path: str) -> str:
     Args:
         corpus_path: Path to the corpus file on disk.
     """
-    orch, _ = _get_orchestrator()
-    orch.index(corpus_path)
-    st = orch.stats()
+    _orch.index(corpus_path)
+    st = _orch.stats()
     return (
         f"Indexing complete. "
         f"{st['entities']} entities, {st['relations']} relations, "
@@ -98,8 +92,7 @@ def query(question: str) -> str:
     Args:
         question: The natural-language question to answer.
     """
-    orch, _ = _get_orchestrator()
-    return orch.query(question)
+    return _orch.query(question)
 
 
 @mcp.tool()
@@ -113,11 +106,10 @@ def search(
         query_str: The search term (case-insensitive substring match).
         search_type: What to search — "entities", "chunks", or "all".
     """
-    orch, _ = _get_orchestrator()
     parts: list[str] = []
 
     if search_type in ("entities", "all"):
-        entities = orch.search_entities(query_str)
+        entities = _orch.search_entities(query_str)
         if entities:
             lines = [f"  [{e['type']}] {e['name']}: {e['description'][:120]}" for e in entities]
             parts.append(f"Entities ({len(entities)}):\n" + "\n".join(lines))
@@ -125,7 +117,7 @@ def search(
             parts.append(f"No entities matching '{query_str}'.")
 
     if search_type in ("chunks", "all"):
-        chunks = orch.search_chunks(query_str)
+        chunks = _orch.search_chunks(query_str)
         if chunks:
             lines = [f"  {c['id']}: {c['text'][:120]}..." for c in chunks]
             parts.append(f"Chunks ({len(chunks)}):\n" + "\n".join(lines))
@@ -147,8 +139,7 @@ def add(documents: list[dict[str, Any]]) -> str:
     Args:
         documents: List of document dicts, each with at least a "text" key.
     """
-    _, queue = _get_orchestrator()
-    pending = queue.enqueue(documents)
+    pending = _queue.enqueue(documents)
     return (
         f"Enqueued {len(documents)} document(s). "
         f"{pending} total pending. "
@@ -163,53 +154,98 @@ def remove(entity_name: str) -> str:
     Args:
         entity_name: The exact name of the entity to delete.
     """
-    orch, _ = _get_orchestrator()
-    if orch.remove_entity(entity_name):
+    if _orch.remove_entity(entity_name):
         return f"Removed entity '{entity_name}' and its relations."
     return f"Entity '{entity_name}' not found."
+
+
+import threading
+
+_reindex_lock = threading.Lock()
+_reindex_status: str = "idle"  # "idle" | "running" | "done: ..."
+
+
+def _bg_reindex_worker():
+    """Runs entirely on a detached thread — no asyncio involvement."""
+    global _reindex_status
+    log.info("[reindex-bg] Worker thread started")
+    try:
+        log.info("[reindex-bg] Calling _queue.flush() ...")
+        flushed = _queue.flush()
+        log.info("[reindex-bg] flush() returned: %d doc(s) flushed", flushed)
+
+        log.info("[reindex-bg] Calling _orch.stats() ...")
+        st = _orch.stats()
+        log.info(
+            "[reindex-bg] Complete: %d doc(s). "
+            "DB: %d entities, %d relations, %d chunks, %d levels.",
+            flushed, st["entities"], st["relations"],
+            st["chunks"], st["hierarchy_levels"],
+        )
+        _reindex_status = (
+            f"done: {flushed} doc(s) reindexed. "
+            f"{st['entities']} entities, {st['relations']} relations, "
+            f"{st['chunks']} chunks, {st['hierarchy_levels']} levels."
+        )
+    except Exception as exc:
+        log.exception("[reindex-bg] FAILED")
+        _reindex_status = f"error: {exc}"
 
 
 @mcp.tool()
 def reindex() -> str:
     """Immediately flush the pending document queue and reindex.
 
-    Use this after 'add' calls when you want results available right away
-    instead of waiting for the 3-minute auto-flush.
+    Runs in the background so other tools remain responsive.
+    Use 'info' to check when it finishes (pending count drops to 0).
     """
-    _, queue = _get_orchestrator()
-    count = queue.pending_count()
+    global _reindex_status
+
+    log.info("[reindex] Tool called")
+
+    count = _queue.pending_count()
+    log.info("[reindex] Pending count: %d", count)
     if count == 0:
-        return "Queue is empty — nothing to reindex."
+        last = _reindex_status
+        log.info("[reindex] Queue empty. Last status: %s", last)
+        return f"Queue is empty — nothing to reindex. Last reindex status: {last}"
 
-    import threading
+    if _reindex_status == "running":
+        log.info("[reindex] Already running, skipping")
+        return "A reindex is already in progress. Use 'info' to check status."
 
-    def _background_flush():
-        try:
-            flushed = queue.flush()
-            log.info("Background reindex complete: %d document(s) flushed.", flushed)
-        except Exception:
-            log.exception("Background reindex failed")
-
-    threading.Thread(target=_background_flush, daemon=True).start()
+    _reindex_status = "running"
+    log.info("[reindex] Spawning background thread ...")
+    t = threading.Thread(target=_bg_reindex_worker, name="reindex-bg", daemon=True)
+    t.start()
+    log.info("[reindex] Thread spawned (id=%s), returning immediately", t.ident)
 
     return (
         f"Reindex started in background for {count} document(s). "
-        f"Use 'info' to check progress (pending count will drop to 0 when done)."
+        f"Use 'info' to check progress — pending count will drop to 0 when done."
     )
+
+
+@mcp.tool()
+def health() -> str:
+    """Quick health check. Returns immediately without initialising the pipeline."""
+    return "healthy"
+
 
 @mcp.tool()
 def info() -> str:
     """Show database statistics and queue status."""
-    orch, queue = _get_orchestrator()
-    st = orch.stats()
-    pending = queue.pending_count()
+    st = _orch.stats()
+    pending = _queue.pending_count()
     return (
         f"Entities:         {st['entities']}\n"
         f"Relations:        {st['relations']}\n"
         f"Chunks:           {st['chunks']}\n"
         f"Hierarchy levels: {st['hierarchy_levels']}\n"
-        f"Pending in queue: {pending}"
+        f"Pending in queue: {pending}\n"
+        f"Reindex status:   {_reindex_status}"
     )
+
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
