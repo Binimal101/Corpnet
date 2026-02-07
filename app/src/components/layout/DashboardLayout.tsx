@@ -46,7 +46,7 @@ export function DashboardLayout() {
                 <Network className="w-4 h-4 text-white" />
               </div>
               <span className="font-bold text-lg bg-gradient-to-r from-mosaic-purple via-mosaic-teal to-mosaic-coral bg-clip-text text-transparent">
-                Mosaic RAG
+                CorpNet
               </span>
             </div>
 

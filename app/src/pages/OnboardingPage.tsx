@@ -175,7 +175,7 @@ export function OnboardingPage() {
                 <Network className="w-4 h-4 text-white" />
               </div>
               <span className="font-bold text-xl bg-gradient-to-r from-mosaic-purple via-mosaic-teal to-mosaic-coral bg-clip-text text-transparent">
-                Mosaic RAG
+                CorpNet
               </span>
             </div>
             <h2 className="text-2xl font-bold text-foreground mt-4">
