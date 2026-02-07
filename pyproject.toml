@@ -14,7 +14,8 @@ dependencies = [
     "pyyaml>=6.0",
     "numpy>=1.24",
     "python-dotenv>=1.0",
-    "fastmcp>=2.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
 ]
 
 [project.optional-dependencies]

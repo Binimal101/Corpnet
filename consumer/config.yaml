@@ -1,9 +1,23 @@
 # Consumer Configuration
 #
-# Embedding + LLM are real (needed for query-time embedding & answer
-# generation).  Stores are stubs — the consumer does NOT touch
-# archrag.db.  These will be swapped for network adapters later.
+# The consumer is a thin read-only gateway.  It forwards every
+# request to the producer's FastAPI server over HTTP.
+#
+# producer_url must match the producer's server.host + server.port
+# + server.base_url.  For example if the producer runs on
+# 0.0.0.0:8000 with base_url: /api/v1, set:
+#   producer_url: http://localhost:8000/api/v1
 
+# ── Producer connection ──────────────────────────────────────────────
+producer_url: http://localhost:8000
+
+# ── Consumer server settings ─────────────────────────────────────────
+server:
+  host: 0.0.0.0
+  port: 8001
+  base_url: /
+
+# ── Local embedding + LLM (kept for possible future local use) ───────
 embedding:
   adapter: openai
   model: text-embedding-3-small
@@ -13,23 +27,3 @@ llm:
   adapter: openai
   model: gpt-4o-mini
   temperature: 0.0
-
-# Storage is stubbed — no local database.
-# These keys exist so the config loader can recognise the adapter
-# names and instantiate the right classes.
-graph_store:
-  adapter: stub
-
-document_store:
-  adapter: stub
-
-vector_index:
-  adapter: stub
-
-clustering:
-  adapter: stub
-
-# Retrieval params still matter (they tune search behaviour once
-# stubs are replaced with real network adapters).
-retrieval:
-  k_per_layer: 5

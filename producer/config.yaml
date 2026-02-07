@@ -1,6 +1,18 @@
 # Producer Configuration — owns archrag.db and all write operations.
 # All relative paths are resolved from this file's parent directory.
 
+# ── Server settings ──────────────────────────────────────────────────
+# Controls how the FastAPI server binds when started via
+#   python -m producer.api
+#
+# base_url is the path prefix for every endpoint, e.g.
+#   base_url: /api/v1  →  POST /api/v1/add, GET /api/v1/stats, …
+#   base_url: /        →  POST /add, GET /stats, …
+server:
+  host: 0.0.0.0
+  port: 8000
+  base_url: /
+
 # Where persistent data lives (relative to this config file).
 # Created automatically on first run if it doesn't exist.
 data_dir: data

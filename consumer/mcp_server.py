@@ -1,12 +1,20 @@
-"""Consumer MCP Server — read-only.
+"""Consumer FastAPI server — read-only HTTP proxy.
 
-Exposes **only** search, query, info, and health tools.
-No add / remove / index / reindex — those live in the producer.
+Forwards every read request to the producer's FastAPI server over
+HTTP.  The producer URL (including any ``base_url`` prefix) is read
+from ``consumer/config.yaml`` → ``producer_url``.
 
-The consumer's storage adapters are stubs that return empty results.
-Once the network adapter is built, they will proxy reads to the
-producer over MCP / HTTP and this server will return real data
-without ever touching archrag.db.
+Endpoints (relative to *base_url*)::
+
+    GET  /health   — Local health check + producer reachability
+    POST /query    — Forward to producer POST /query
+    POST /search   — Forward to producer POST /search
+    GET  /info     — Forward to producer GET  /stats
+
+Start with::
+
+    python -m consumer.mcp_server      # reads host/port from config
+    uvicorn consumer.mcp_server:app    # manual
 """
 
 from __future__ import annotations
@@ -14,32 +22,23 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
+import httpx
 from dotenv import load_dotenv
-from fastmcp import FastMCP
+from fastapi import APIRouter, FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 # Resolve paths relative to *this* file → consumer/
 _CONSUMER_ROOT = Path(__file__).resolve().parent
 _PROJECT_ROOT = _CONSUMER_ROOT.parent
 load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
-from archrag.config import build_orchestrator  # noqa: E402
+from archrag.config import load_config  # noqa: E402
 
 log = logging.getLogger(__name__)
 
-# ── Server singleton ──
-
-mcp = FastMCP(
-    "ArchRAG-Consumer",
-    instructions=(
-        "ArchRAG Consumer: read-only search & query server. "
-        "Use 'query' to ask questions, 'search' to find entities/chunks. "
-        "This server does NOT support add, remove, or reindex — "
-        "those operations belong to the producer."
-    ),
-)
-
-# ── Eager initialisation ─────────────────────────────────────────────
+# ── Load consumer config ─────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,76 +50,126 @@ _config_path = os.environ.get(
     str(_CONSUMER_ROOT / "config.yaml"),
 )
 log.info("[consumer] Loading config from %s …", _config_path)
-_orch = build_orchestrator(_config_path)
-log.info("[consumer] Orchestrator ready (stub stores — no DB).")
+_raw_cfg = load_config(_config_path)
+
+_PRODUCER_URL: str = _raw_cfg.get("producer_url", "http://localhost:8000").rstrip("/")
+
+_server_cfg = _raw_cfg.get("server", {})
+_HOST: str = _server_cfg.get("host", "0.0.0.0")
+_PORT: int = int(_server_cfg.get("port", 8001))
+_BASE_URL: str = _server_cfg.get("base_url", "/").rstrip("/") or "/"
+
+log.info(
+    "[consumer] producer_url=%s  host=%s  port=%d  base_url=%s",
+    _PRODUCER_URL, _HOST, _PORT, _BASE_URL,
+)
+
+# Shared HTTP client — connection pooling, 30 s timeout
+_http = httpx.Client(base_url=_PRODUCER_URL, timeout=30.0)
 
 
-# ── MCP Tools (read-only) ────────────────────────────────────────────
+# ── Helper ───────────────────────────────────────────────────────────
 
 
-@mcp.tool()
-def health() -> str:
-    """Quick health check. Returns immediately."""
-    return "healthy"
+def _forward(
+    method: str,
+    path: str,
+    *,
+    json_body: dict | None = None,
+) -> Any:
+    """Forward a request to the producer and return the parsed JSON."""
+    try:
+        resp = _http.request(method, path, json=json_body)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot reach producer at {_PRODUCER_URL}",
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=exc.response.text,
+        )
 
 
-@mcp.tool()
-def query(question: str) -> str:
-    """Answer a question using hierarchical search + adaptive filtering.
-
-    Args:
-        question: The natural-language question to answer.
-    """
-    return _orch.query(question)
+# ── Request models ───────────────────────────────────────────────────
 
 
-@mcp.tool()
-def search(
-    query_str: str,
-    search_type: str = "entities",
-) -> str:
-    """Search the knowledge graph by substring.
-
-    Args:
-        query_str: The search term (case-insensitive substring match).
-        search_type: What to search — "entities", "chunks", or "all".
-    """
-    parts: list[str] = []
-
-    if search_type in ("entities", "all"):
-        entities = _orch.search_entities(query_str)
-        if entities:
-            lines = [
-                f"  [{e['type']}] {e['name']}: {e['description'][:120]}"
-                for e in entities
-            ]
-            parts.append(f"Entities ({len(entities)}):\n" + "\n".join(lines))
-        else:
-            parts.append(f"No entities matching '{query_str}'.")
-
-    if search_type in ("chunks", "all"):
-        chunks = _orch.search_chunks(query_str)
-        if chunks:
-            lines = [f"  {c['id']}: {c['content'][:120]}..." for c in chunks]
-            parts.append(f"Chunks ({len(chunks)}):\n" + "\n".join(lines))
-        else:
-            parts.append(f"No chunks matching '{query_str}'.")
-
-    return "\n\n".join(parts)
+class QueryRequest(BaseModel):
+    question: str = Field(..., description="The natural-language question to answer.")
 
 
-@mcp.tool()
-def info() -> str:
-    """Show database statistics (from stub stores — will be zeros until connected to producer)."""
-    st = _orch.stats()
-    return (
-        f"Entities:         {st['entities']}\n"
-        f"Relations:        {st['relations']}\n"
-        f"Chunks:           {st['chunks']}\n"
-        f"Hierarchy levels: {st['hierarchy_levels']}\n"
-        f"(stub stores — not yet connected to producer)"
+class SearchRequest(BaseModel):
+    query_str: str = Field(..., description="The search term (case-insensitive substring match).")
+    search_type: str = Field(
+        "entities",
+        description='What to search — "entities", "chunks", or "all".',
     )
 
 
+# ── Router (mounted at base_url) ────────────────────────────────────
+
+router = APIRouter()
+
+
+@router.get("/health")
+def health_endpoint() -> dict[str, Any]:
+    """Local health check + producer reachability probe."""
+    try:
+        r = _http.get("/stats")
+        r.raise_for_status()
+        return {"status": "healthy", "producer": "reachable", "producer_url": _PRODUCER_URL}
+    except Exception:
+        return {"status": "healthy", "producer": "unreachable", "producer_url": _PRODUCER_URL}
+
+
+@router.post("/query")
+def query_endpoint(body: QueryRequest) -> dict:
+    """Forward to producer POST /query."""
+    return _forward("POST", "/query", json_body={"question": body.question})
+
+
+@router.post("/search")
+def search_endpoint(body: SearchRequest) -> dict:
+    """Forward to producer POST /search."""
+    return _forward(
+        "POST",
+        "/search",
+        json_body={"query_str": body.query_str, "search_type": body.search_type},
+    )
+
+
+@router.get("/info")
+def info_endpoint() -> dict:
+    """Forward to producer GET /stats."""
+    return _forward("GET", "/stats")
+
+
+# ── FastAPI app — mounts the router at base_url ─────────────────────
+
+app = FastAPI(
+    title="ArchRAG Consumer",
+    description=(
+        "Read-only gateway for the ArchRAG pipeline. "
+        "Forwards search, query, and info requests to the producer. "
+        "This server does NOT support add, remove, or reindex — "
+        "those operations belong to the producer directly."
+    ),
+    version="0.1.0",
+)
+app.include_router(router, prefix=_BASE_URL if _BASE_URL != "/" else "")
+
+
+# ── Convenience: python -m consumer.mcp_server ──────────────────────
+
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import uvicorn
+
+    uvicorn.run(
+        "consumer.mcp_server:app",
+        host=_HOST,
+        port=_PORT,
+        reload=False,
+    )
