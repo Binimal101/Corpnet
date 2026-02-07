@@ -8,25 +8,27 @@ Built with a **hexagonal / ports & adapters** architecture — every external de
 
 ### 1. Create and activate the virtual environment
 
+Create env
 ```powershell
 python -m venv .venv
 ```
 
-For Windows:
-```cmd
-.venv\Scripts\activate
-```
-
-For Mac/Linux:
+Activate env (for Mac/Linux):
 ```sh
 source .venv/bin/activate
 ```
 
-For Powershell:
+Activate env (for Windows Command Prompt):
+```cmd
+.venv\Scripts\activate
+```
+
+Activate env (for Windows Powershell):
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
+Install dependencies
 ```powershell
 pip install -e ".[all,dev]"
 ```
