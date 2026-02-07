@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import tempfile
 from pathlib import Path
 
 from archrag.domain.models import Entity, Relation
@@ -196,3 +197,13 @@ class SQLiteGraphStore(GraphStorePort):
             (f"%{query}%",),
         )
         return [self._row_to_entity(r) for r in cur.fetchall()]
+
+    def clone(self) -> "SQLiteGraphStore":
+        """Create an independent copy via sqlite3 backup API."""
+        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="archrag_graph_")
+        import os
+        os.close(fd)
+        dst_conn = sqlite3.connect(tmp_path)
+        self._conn.backup(dst_conn)
+        dst_conn.close()
+        return SQLiteGraphStore(db_path=tmp_path)

@@ -100,3 +100,14 @@ class NumpyVectorIndex(VectorIndexPort):
     def clear(self) -> None:
         self._layers.clear()
         self._all_vectors.clear()
+
+    def clone(self) -> "NumpyVectorIndex":
+        """Create an independent deep copy of the index."""
+        import copy
+        new = NumpyVectorIndex()
+        new._layers = {
+            layer: {vid: vec.copy() for vid, vec in vecs.items()}
+            for layer, vecs in self._layers.items()
+        }
+        new._all_vectors = {vid: vec.copy() for vid, vec in self._all_vectors.items()}
+        return new

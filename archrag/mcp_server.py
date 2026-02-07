@@ -177,18 +177,25 @@ def reindex() -> str:
     instead of waiting for the 3-minute auto-flush.
     """
     _, queue = _get_orchestrator()
-    count = queue.flush()
+    count = queue.pending_count()
     if count == 0:
         return "Queue is empty — nothing to reindex."
 
-    orch, _ = _get_orchestrator()
-    st = orch.stats()
-    return (
-        f"Reindexed {count} document(s). "
-        f"DB now has {st['entities']} entities, {st['relations']} relations, "
-        f"{st['chunks']} chunks, {st['hierarchy_levels']} hierarchy levels."
-    )
+    import threading
 
+    def _background_flush():
+        try:
+            flushed = queue.flush()
+            log.info("Background reindex complete: %d document(s) flushed.", flushed)
+        except Exception:
+            log.exception("Background reindex failed")
+
+    threading.Thread(target=_background_flush, daemon=True).start()
+
+    return (
+        f"Reindex started in background for {count} document(s). "
+        f"Use 'info' to check progress (pending count will drop to 0 when done)."
+    )
 
 @mcp.tool()
 def info() -> str:
@@ -203,7 +210,6 @@ def info() -> str:
         f"Hierarchy levels: {st['hierarchy_levels']}\n"
         f"Pending in queue: {pending}"
     )
-
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

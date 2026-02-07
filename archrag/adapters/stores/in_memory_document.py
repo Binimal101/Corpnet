@@ -90,3 +90,11 @@ class InMemoryDocumentStore(DocumentStorePort):
     def search_chunks(self, query: str) -> list[TextChunk]:
         q = query.lower()
         return [c for c in self._chunks.values() if q in c.text.lower()]
+
+    def clone(self) -> "InMemoryDocumentStore":
+        """Create an independent deep copy."""
+        new = InMemoryDocumentStore()
+        new._chunks = dict(self._chunks)
+        new._communities = dict(self._communities)
+        new._meta = dict(self._meta)
+        return new

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -205,3 +206,13 @@ class SQLiteDocumentStore(DocumentStorePort):
             TextChunk(id=r[0], text=r[1], source_doc=r[2], metadata=json.loads(r[3]))
             for r in cur.fetchall()
         ]
+
+    def clone(self) -> "SQLiteDocumentStore":
+        """Create an independent copy via sqlite3 backup API."""
+        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="archrag_doc_")
+        import os
+        os.close(fd)
+        dst_conn = sqlite3.connect(tmp_path)
+        self._conn.backup(dst_conn)
+        dst_conn.close()
+        return SQLiteDocumentStore(db_path=tmp_path)

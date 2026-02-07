@@ -45,3 +45,7 @@ class VectorIndexPort(ABC):
 
     @abstractmethod
     def clear(self) -> None: ...
+
+    def clone(self) -> "VectorIndexPort":
+        """Create an independent deep copy of this index (for blue/green swap)."""
+        raise NotImplementedError(f"{type(self).__name__} does not support clone()")

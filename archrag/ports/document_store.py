@@ -69,3 +69,7 @@ class DocumentStorePort(ABC):
 
     @abstractmethod
     def clear(self) -> None: ...
+
+    def clone(self) -> "DocumentStorePort":
+        """Create an independent deep copy of this store (for blue/green swap)."""
+        raise NotImplementedError(f"{type(self).__name__} does not support clone()")

@@ -71,3 +71,10 @@ class InMemoryGraphStore(GraphStorePort):
     def search_entities_by_name(self, query: str) -> list[Entity]:
         q = query.lower()
         return [e for e in self._entities.values() if q in e.name.lower()]
+
+    def clone(self) -> "InMemoryGraphStore":
+        """Create an independent deep copy."""
+        new = InMemoryGraphStore()
+        new._entities = dict(self._entities)
+        new._relations = list(self._relations)
+        return new
