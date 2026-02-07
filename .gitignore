@@ -1,50 +1,56 @@
-# Python
+.htaccess
+css.php
+rpc/
+sites/site*/admin/
+sites/site*/private/
+sites/site*/public/admin/
+sites/site*/public/setup/
+sites/site*/public/theme/
+textpattern/
+HISTORY.txt
+README.txt
+
+analysis/
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-dist/
-build/
-*.egg
+other_baseline/
+wandb/
 
-# Virtual environments
-.venv/
-venv/
-env/
+*.ipynb
+*.txt
+*.log
+*.json
+*.csv
+*.tsv
+*.zip
 
-# IDE
-.idea/
+lancedb/
 .vscode/
+test/
+datasets_io/
+dataset/
+*.code-workspace
 *.swp
 *.swo
+*.o
+*.a
+*.dSYM
+*.so
+*.dylib
+*.pyc
 *~
+/build/
+/config.*
+/aclocal.m4
+/autom4te.cache/
+/makefile.inc
+/bin/
+/c_api/bin/
+/c_api/gpu/bin/
+/tests/test
+/tests/gtest/
+faiss/python/swigfaiss_avx2.swig
+faiss/python/swigfaiss_avx512.swig
+faiss/python/swigfaiss_sve.swig
 
-# Environment
-.env
-
-# Database
-*.db
-*.sqlite3
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-
-# mypy
-.mypy_cache/
-
-# ruff
-.ruff_cache/
-
-# Docker
-docker-compose.override.yml
-
-# Logs
+*.index
 *.log
-logs/
