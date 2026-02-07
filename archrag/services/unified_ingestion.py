@@ -104,22 +104,25 @@ class UnifiedIngestionPipeline:
         input_data: dict[str, Any],
         *,
         skip_kg: bool = False,
+        access_id: str = "",
     ) -> MemoryNote:
         """Ingest a single item through the unified pipeline.
         
         Args:
             input_data: Dict with 'content' or 'text' key, optional metadata.
             skip_kg: If True, only create MemoryNote, skip KG pipeline.
+            access_id: Hierarchical access scope for the note and its chunks.
             
         Returns:
             The created MemoryNote.
         """
         # Step 1: Build MemoryNote with LLM enrichment
-        note = self._note_service.build_note(input_data)
+        # access_id flows: parameter > input_data > empty
+        note = self._note_service.build_note(input_data, access_id=access_id)
         
         # Step 2: Save to note store
         self._note_store.save_note(note)
-        log.info("Created MemoryNote %s: %s...", note.id, note.content[:50])
+        log.info("Created MemoryNote %s (access_id=%s): %s...", note.id, note.access_id, note.content[:50])
         
         # Step 3: If not skipping KG, run through chunking and entity extraction
         if not skip_kg:
@@ -132,12 +135,14 @@ class UnifiedIngestionPipeline:
         items: list[dict[str, Any]],
         *,
         skip_kg: bool = False,
+        access_id: str = "",
     ) -> list[MemoryNote]:
         """Ingest multiple items through the unified pipeline.
         
         Args:
             items: List of dicts with 'content' or 'text' keys.
             skip_kg: If True, only create MemoryNotes, skip KG pipeline.
+            access_id: Default access scope for all items (unless overridden in item).
             
         Returns:
             List of created MemoryNotes.
@@ -146,7 +151,9 @@ class UnifiedIngestionPipeline:
         
         for item in items:
             try:
-                note = self.ingest_single(item, skip_kg=skip_kg)
+                # Item-level access_id overrides batch-level
+                item_access_id = item.get("access_id", access_id)
+                note = self.ingest_single(item, skip_kg=skip_kg, access_id=item_access_id)
                 notes.append(note)
             except Exception as e:
                 log.error("Failed to ingest item: %s", e)
@@ -158,11 +165,13 @@ class UnifiedIngestionPipeline:
     def ingest_file(
         self,
         path: str,
+        access_id: str = "",
     ) -> list[MemoryNote]:
         """Ingest documents from a file (JSONL or JSON).
         
         Args:
             path: Path to corpus file.
+            access_id: Default access scope for all documents in the file.
             
         Returns:
             List of created MemoryNotes.
@@ -170,7 +179,7 @@ class UnifiedIngestionPipeline:
         documents = self._load_file(path)
         log.info("Loaded %d documents from %s", len(documents), path)
         
-        return self.ingest_batch(documents)
+        return self.ingest_batch(documents, access_id=access_id)
 
     def ingest_from_external_record(
         self,
@@ -298,6 +307,7 @@ class UnifiedIngestionPipeline:
         """Chunk a MemoryNote's content into TextChunks.
         
         The chunk includes note metadata for provenance.
+        access_id is inherited from the parent note.
         """
         chunks: list[TextChunk] = []
         content = note.content
@@ -312,11 +322,13 @@ class UnifiedIngestionPipeline:
             chunk = TextChunk(
                 text=chunk_text,
                 source_doc=note.id,  # Use note ID as source
+                access_id=note.access_id,  # Inherit access scope from parent note
                 metadata={
                     "note_id": note.id,
                     "note_category": note.category,
                     "note_tags": note.tags,
                     "note_keywords": note.keywords,
+                    "access_id": note.access_id,  # Also in metadata for easy filtering
                     "chunk_index": chunk_idx,
                 },
             )

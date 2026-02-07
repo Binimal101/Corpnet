@@ -45,12 +45,15 @@ class NoteConstructionService:
     def build_note(
         self,
         input_data: dict[str, Any],
+        access_id: str = "",
     ) -> MemoryNote:
         """Build an enriched MemoryNote from raw input.
 
         Args:
             input_data: Dict with at least 'content' or 'text' key.
-                       Optional: 'category', 'tags', 'keywords'.
+                       Optional: 'category', 'tags', 'keywords', 'access_id'.
+            access_id: Hierarchical access scope for the note.
+                      If not provided, uses input_data['access_id'] or empty.
 
         Returns:
             Fully constructed MemoryNote with LLM-generated metadata.
@@ -74,6 +77,9 @@ class NoteConstructionService:
         category = input_data.get("category", "")
         retrieval_count = input_data.get("retrieval_count", 0)
         last_updated = input_data.get("last_updated")
+        
+        # Determine access_id: parameter > input_data > empty
+        note_access_id = access_id or input_data.get("access_id", "")
 
         # 3. Compute embedding with structured format
         embed_text = self._build_embedding_text(
@@ -97,6 +103,7 @@ class NoteConstructionService:
             last_updated=last_updated,
             embedding=embedding,
             embedding_model=embedding_model,
+            access_id=note_access_id,
         )
 
         return note

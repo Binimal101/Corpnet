@@ -250,5 +250,62 @@ def connect_saved(ctx: click.Context, name: str) -> None:
         click.echo("No tables configured. Use 'archrag agent' to configure sync settings.")
 
 
+@main.command("api")
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
+@click.option("--port", type=int, default=8080, help="Port to listen on")
+@click.option("--producer-url", default="http://localhost:8000", help="Producer API URL")
+@click.option("--consumer-url", default="http://localhost:8001", help="Consumer API URL")
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
+@click.pass_context
+def api_server(
+    ctx: click.Context,
+    host: str,
+    port: int,
+    producer_url: str,
+    consumer_url: str,
+    reload: bool,
+) -> None:
+    """Start the agentic API server for frontend integration.
+    
+    This starts an HTTP API that provides a stateful conversational
+    interface for data management. The frontend sends a user_id and
+    auth_access_token to create a session, then sends messages.
+    
+    The API routes requests to:
+    - Producer API for WRITE operations (index, add, remove)
+    - Consumer API for READ operations (query, search, info)
+    
+    Examples:
+        archrag api                           # Default settings
+        archrag api --port 9000               # Custom port
+        archrag api --producer-url http://prod.local:8000
+        
+    API Endpoints:
+        POST /session    - Create a session
+        POST /chat       - Send a message
+        GET  /session/id - Get session state
+        DELETE /session/id - End session
+    """
+    import uvicorn
+    from archrag.api.server import create_app
+    
+    click.echo(f"Starting ArchRAG Agentic API on {host}:{port}")
+    click.echo(f"  Producer: {producer_url}")
+    click.echo(f"  Consumer: {consumer_url}")
+    click.echo(f"  Docs: http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs")
+    
+    app = create_app(
+        producer_url=producer_url,
+        consumer_url=consumer_url,
+    )
+    
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 if __name__ == "__main__":
     main()

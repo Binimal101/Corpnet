@@ -25,6 +25,7 @@ class TextChunk:
     text: str
     id: str = field(default_factory=_uid)
     source_doc: str = ""
+    access_id: str = ""  # Hierarchical access scope (inherits from parent note)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -192,6 +193,7 @@ class MemoryNote:
     - tags (G_i): LLM-generated categorization tags
     - embedding (e_i): Dense vector for similarity matching
     - embedding_model: Model used to generate the embedding
+    - access_id: Hierarchical access scope for permission filtering
     """
 
     content: str
@@ -203,6 +205,7 @@ class MemoryNote:
     retrieval_count: int = 0
     embedding: list[float] | None = None
     embedding_model: str = ""  # Model identifier (e.g., "text-embedding-3-small")
+    access_id: str = ""  # Hierarchical access scope (e.g., "dept_engineering")
 
     def to_document(self) -> dict[str, Any]:
         """Convert to a document dict for KG construction pipeline."""
@@ -210,10 +213,12 @@ class MemoryNote:
             "text": self.content,
             "title": f"Note {self.id}",
             "id": self.id,
+            "access_id": self.access_id,
             "metadata": {
                 "keywords": self.keywords,
                 "tags": self.tags,
                 "category": self.category,
+                "access_id": self.access_id,
             },
         }
 
@@ -269,6 +274,7 @@ class ExternalRecord:
     source_database: str  # Database identifier
     content: dict[str, Any]  # All fields as key-value
     text_content: str  # Concatenated text for indexing
+    access_id: str = ""  # Access scope for permission filtering
     metadata: dict[str, Any] = field(default_factory=dict)  # Schema info, types, constraints
     created_at: str | None = None  # Source timestamp if available
     updated_at: str | None = None  # Source timestamp if available
@@ -279,11 +285,13 @@ class ExternalRecord:
             "content": self.text_content,
             "category": self.source_table,
             "tags": [self.source_database, self.source_table],
+            "access_id": self.access_id,
             "metadata": {
                 "source_id": self.id,
                 "source_table": self.source_table,
                 "source_database": self.source_database,
                 "original_content": self.content,
+                "access_id": self.access_id,
             },
         }
 

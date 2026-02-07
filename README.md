@@ -89,6 +89,7 @@ archrag query "What did Einstein win the Nobel Prize for?"
 | `archrag agent` | **Interactive agent for guided data ingestion** |
 | `archrag agent --no-llm` | Form-based guided setup (no LLM required) |
 | `archrag serve` | Start MCP server for AI client integration |
+| `archrag api` | **Start agentic HTTP API for frontend integration** |
 | `archrag connections` | List saved database connections |
 | `archrag connect <name>` | Connect to a saved database and sync |
 
@@ -145,6 +146,39 @@ You: quit
 Goodbye! Your session has been saved.
 ```
 
+## Agentic HTTP API
+
+ArchRAG provides a stateful HTTP API for frontend integration:
+
+```bash
+# Start the agentic API server
+archrag api
+
+# Custom port
+archrag api --port 9000
+
+# With custom backend URLs
+archrag api --producer-url http://prod:8000 --consumer-url http://cons:8001
+```
+
+### API Flow
+
+1. **Create session** with user ID and permissions:
+```bash
+curl -X POST http://localhost:8080/session \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user_123", "auth_access_token": {"write_perm": true, "read_perm": true}}'
+```
+
+2. **Send messages** - the API routes to Producer (WRITE) or Consumer (READ):
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "...", "message": "What is Einstein known for?"}'
+```
+
+See [docs/agentic_api_ref.md](docs/agentic_api_ref.md) for full API reference.
+
 ## MCP Server
 
 ArchRAG exposes its functionality via an MCP server for AI agent integration:
@@ -177,10 +211,6 @@ Add these sections to `config.yaml`:
 memory_note_store:
   adapter: sqlite
   path: data/archrag.db
-
-memory:
-  k_nearest: 10
-  enable_evolution: true
 ```
 
 ## Tests
