@@ -319,7 +319,7 @@ export function LoadingScreen() {
       <canvas
         ref={canvasRef}
         className="absolute inset-0"
-        style={{ opacity: 0.9 }}
+        style={{ opacity: 0.4 }}
       />
       
       <div className="relative z-10 flex flex-col items-center">
@@ -389,7 +389,7 @@ export function LoadingScreen() {
           className="text-center"
         >
           <h2 className="text-3xl font-bold bg-gradient-to-r from-mosaic-purple via-mosaic-teal to-mosaic-coral bg-clip-text text-transparent">
-            Building Neural Network
+            Building Knowledge Graph
           </h2>
           
           <AnimatePresence mode="wait">
