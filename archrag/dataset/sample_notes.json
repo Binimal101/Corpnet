@@ -1,0 +1,93 @@
+[
+    {
+        "content": "Albert Einstein published his groundbreaking paper on the photoelectric effect in 1905, which later earned him the Nobel Prize in Physics in 1921. This work demonstrated that light consists of discrete energy packets called photons.",
+        "category": "physics",
+        "tags": [
+            "quantum mechanics",
+            "Nobel Prize",
+            "historical"
+        ]
+    },
+    {
+        "content": "Marie Curie was the first woman to win a Nobel Prize and remains the only person to have won Nobel Prizes in two different sciences: Physics (1903) and Chemistry (1911). Her research on radioactivity laid the foundation for modern nuclear physics.",
+        "category": "physics",
+        "tags": [
+            "Nobel Prize",
+            "radioactivity",
+            "historical",
+            "women in science"
+        ]
+    },
+    {
+        "content": "The Python programming language was created by Guido van Rossum and first released in 1991. It emphasizes code readability and has become one of the most popular languages for data science, machine learning, and web development.",
+        "category": "technology",
+        "tags": [
+            "programming",
+            "software development",
+            "data science"
+        ]
+    },
+    {
+        "content": "Machine learning is a subset of artificial intelligence that enables systems to learn and improve from experience without being explicitly programmed. Common approaches include supervised learning, unsupervised learning, and reinforcement learning.",
+        "category": "technology",
+        "tags": [
+            "artificial intelligence",
+            "data science",
+            "algorithms"
+        ]
+    },
+    {
+        "content": "The transformer architecture, introduced in the 2017 paper 'Attention Is All You Need', revolutionized natural language processing. It uses self-attention mechanisms to process sequential data in parallel, enabling the development of large language models like GPT and BERT.",
+        "category": "technology",
+        "tags": [
+            "artificial intelligence",
+            "NLP",
+            "deep learning"
+        ]
+    },
+    {
+        "content": "Retrieval-Augmented Generation (RAG) combines the power of large language models with external knowledge retrieval. This approach helps reduce hallucinations and enables LLMs to access up-to-date information beyond their training data.",
+        "category": "technology",
+        "tags": [
+            "artificial intelligence",
+            "NLP",
+            "knowledge management"
+        ]
+    },
+    {
+        "content": "The Zettelkasten method is a personal knowledge management system developed by German sociologist Niklas Luhmann. It involves creating atomic notes with unique identifiers and linking them to form an interconnected network of ideas.",
+        "category": "productivity",
+        "tags": [
+            "knowledge management",
+            "note-taking",
+            "methodology"
+        ]
+    },
+    {
+        "content": "Graph databases like Neo4j store data as nodes and relationships, making them ideal for representing connected information. They excel at traversing relationships and finding patterns in highly connected datasets.",
+        "category": "technology",
+        "tags": [
+            "databases",
+            "knowledge graphs",
+            "data storage"
+        ]
+    },
+    {
+        "content": "The double-slit experiment demonstrates the wave-particle duality of quantum mechanics. When particles like electrons pass through two slits, they create an interference pattern, suggesting they behave as waves until observed.",
+        "category": "physics",
+        "tags": [
+            "quantum mechanics",
+            "experiments",
+            "wave-particle duality"
+        ]
+    },
+    {
+        "content": "Climate change is causing global temperatures to rise, leading to melting ice caps, rising sea levels, and more frequent extreme weather events. The Paris Agreement aims to limit warming to 1.5°C above pre-industrial levels.",
+        "category": "environment",
+        "tags": [
+            "climate",
+            "sustainability",
+            "global issues"
+        ]
+    }
+]

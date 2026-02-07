@@ -21,6 +21,7 @@ from archrag.ports.document_store import DocumentStorePort
 from archrag.ports.embedding import EmbeddingPort
 from archrag.ports.graph_store import GraphStorePort
 from archrag.ports.llm import LLMPort
+from archrag.ports.memory_note_store import MemoryNoteStorePort
 from archrag.ports.vector_index import VectorIndexPort
 from archrag.services.orchestrator import ArchRAGOrchestrator
 
@@ -127,6 +128,18 @@ def build_clustering(cfg: dict[str, Any]) -> ClusteringPort:
     raise ValueError(f"Unknown clustering adapter: {adapter}")
 
 
+def build_memory_note_store(cfg: dict[str, Any]) -> MemoryNoteStorePort:
+    """Build memory note store adapter."""
+    adapter = cfg.get("adapter", "sqlite")
+    db_path = cfg.get("path", "data/archrag.db")
+
+    if adapter == "sqlite":
+        from archrag.adapters.stores.sqlite_memory_note import SQLiteMemoryNoteStore
+        return SQLiteMemoryNoteStore(db_path=db_path)
+
+    raise ValueError(f"Unknown memory_note_store adapter: {adapter}")
+
+
 # ── Top-level builder ──
 
 
@@ -140,10 +153,12 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
     doc_store = build_document_store(cfg.get("document_store", {}))
     vector_index = build_vector_index(cfg.get("vector_index", {}))
     clustering = build_clustering(cfg.get("clustering", {}))
+    memory_note_store = build_memory_note_store(cfg.get("memory_note_store", {}))
 
     indexing_cfg = cfg.get("indexing", {})
     retrieval_cfg = cfg.get("retrieval", {})
     chnsw_cfg = cfg.get("chnsw", {})
+    memory_cfg = cfg.get("memory", {})
 
     return ArchRAGOrchestrator(
         llm=llm,
@@ -152,6 +167,7 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
         doc_store=doc_store,
         vector_index=vector_index,
         clustering=clustering,
+        memory_note_store=memory_note_store,
         chunk_size=indexing_cfg.get("chunk_size", 1200),
         chunk_overlap=indexing_cfg.get("chunk_overlap", 100),
         max_levels=indexing_cfg.get("max_hierarchy_levels", 5),
@@ -159,4 +175,6 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
         M=chnsw_cfg.get("M", 32),
         ef_construction=chnsw_cfg.get("ef_construction", 100),
         k_per_layer=retrieval_cfg.get("k_per_layer", 5),
+        note_k_nearest=memory_cfg.get("k_nearest", 10),
+        note_enable_evolution=memory_cfg.get("enable_evolution", True),
     )

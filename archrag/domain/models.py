@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 
 def _uid() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def _now_timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M")
 
 
 # ── Corpus ──────────────────────────────────────────────────────────────────
@@ -173,3 +178,142 @@ class AnalysisReport:
 
     level: int
     points: list[AnalysisPoint] = field(default_factory=list)
+
+
+# ── Memory Notes (A-Mem inspired) ────────────────────────────────────────────
+
+@dataclass
+class MemoryNote:
+    """A memory note following the A-Mem Zettelkasten-inspired design.
+
+    Implements the memory model from arXiv 2502.12110 (Section 3.1):
+    - content (c_i): Original interaction content
+    - timestamp (t_i): Creation time
+    - keywords (K_i): LLM-generated key concepts
+    - tags (G_i): LLM-generated categorization tags
+    - context (X_i): LLM-generated contextual description
+    - links (L_i): Set of linked memory IDs
+    - embedding (e_i): Dense vector for similarity matching
+    """
+
+    content: str
+    id: str = field(default_factory=_uid)
+    timestamp: str = field(default_factory=_now_timestamp)
+    last_accessed: str | None = None
+    keywords: list[str] = field(default_factory=list)
+    context: str = ""
+    tags: list[str] = field(default_factory=list)
+    category: str = ""
+    links: dict[str, str] = field(default_factory=dict)  # note_id -> relation_type
+    retrieval_count: int = 0
+    evolution_history: list[dict[str, Any]] = field(default_factory=list)
+    embedding: list[float] | None = None
+
+    def to_document(self) -> dict[str, Any]:
+        """Convert to a document dict for KG construction pipeline."""
+        return {
+            "text": self.content,
+            "title": self.context or f"Note {self.id}",
+            "id": self.id,
+            "metadata": {
+                "keywords": self.keywords,
+                "tags": self.tags,
+                "category": self.category,
+                "timestamp": self.timestamp,
+            },
+        }
+
+    def increment_retrieval(self) -> None:
+        """Update access stats when retrieved."""
+        self.retrieval_count += 1
+        self.last_accessed = _now_timestamp()
+
+
+# ── External Database Connector Models ──────────────────────────────────────
+
+@dataclass
+class ColumnInfo:
+    """Column/field metadata for a database table."""
+
+    name: str
+    data_type: str
+    nullable: bool = True
+    is_text: bool = False  # Whether to include in text extraction
+
+
+@dataclass
+class RelationshipInfo:
+    """Foreign key / reference relationship between tables."""
+
+    from_column: str
+    to_table: str
+    to_column: str
+    relationship_type: str = "foreign_key"
+
+
+@dataclass
+class TableSchema:
+    """Schema information for a database table/collection."""
+
+    name: str
+    database: str
+    columns: list[ColumnInfo] = field(default_factory=list)
+    primary_key: str | None = None
+    relationships: list[RelationshipInfo] = field(default_factory=list)
+
+    def text_columns(self) -> list[str]:
+        """Return names of columns marked for text extraction."""
+        return [c.name for c in self.columns if c.is_text]
+
+
+@dataclass
+class ExternalRecord:
+    """A record extracted from an external database."""
+
+    id: str  # Primary key from source
+    source_table: str  # Table/collection name
+    source_database: str  # Database identifier
+    content: dict[str, Any]  # All fields as key-value
+    text_content: str  # Concatenated text for indexing
+    metadata: dict[str, Any] = field(default_factory=dict)  # Schema info, types, constraints
+    created_at: str | None = None  # Source timestamp if available
+    updated_at: str | None = None  # Source timestamp if available
+
+    def to_note_input(self) -> dict[str, Any]:
+        """Convert to input format for NoteConstructionService."""
+        return {
+            "content": self.text_content,
+            "category": self.source_table,
+            "tags": [self.source_database, self.source_table],
+            "metadata": {
+                "source_id": self.id,
+                "source_table": self.source_table,
+                "source_database": self.source_database,
+                "original_content": self.content,
+            },
+        }
+
+
+@dataclass
+class SyncState:
+    """Tracks sync progress for incremental updates."""
+
+    connector_id: str
+    database_name: str
+    table_name: str
+    last_sync_at: str
+    last_record_id: str | None = None
+    last_updated_at: str | None = None
+    record_count: int = 0
+
+
+@dataclass
+class SyncResult:
+    """Result of a database sync operation."""
+
+    tables_synced: list[str] = field(default_factory=list)
+    records_added: int = 0
+    records_updated: int = 0
+    records_failed: int = 0
+    errors: list[str] = field(default_factory=list)
+    duration_seconds: float = 0.0
