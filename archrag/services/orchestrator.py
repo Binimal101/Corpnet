@@ -80,6 +80,7 @@ class ArchRAGOrchestrator:
         vector_index: VectorIndexPort,
         clustering: ClusteringPort,
         *,
+        db_path: str = "data/archrag.db",
         chunk_size: int = 1200,
         chunk_overlap: int = 100,
         max_levels: int = 5,
@@ -93,6 +94,7 @@ class ArchRAGOrchestrator:
         self._embedding = embedding
         self._clustering = clustering
 
+        self._db_path = db_path
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
         self._max_levels = max_levels
@@ -160,6 +162,13 @@ class ArchRAGOrchestrator:
             snap.vector_index.clone(),
         )
 
+    def _persist_snapshot(self, snap: _Snapshot) -> None:
+        """Copy shadow stores back to the canonical DB so data survives restarts."""
+        for store in (snap.graph_store, snap.doc_store):
+            if hasattr(store, "persist_to"):
+                store.persist_to(self._db_path)
+        log.info("Snapshot persisted to %s", self._db_path)
+
     # ── Offline indexing (writer) ──
 
     def index(self, corpus_path: str) -> None:
@@ -202,6 +211,9 @@ class ArchRAGOrchestrator:
 
             # ── Atomic swap ──
             self._snapshot = shadow
+
+            # Copy shadow DB back to canonical path
+            self._persist_snapshot(shadow)
 
         log.info("Offline indexing complete.")
 
@@ -267,6 +279,9 @@ class ArchRAGOrchestrator:
 
             # ── Atomic swap ──
             self._snapshot = shadow
+
+            # Copy shadow DB back to canonical path
+            self._persist_snapshot(shadow)
 
         log.info("Re-indexed with new documents.")
 

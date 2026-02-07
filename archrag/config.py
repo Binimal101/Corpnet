@@ -165,6 +165,9 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
     retrieval_cfg = cfg.get("retrieval", {})
     chnsw_cfg = cfg.get("chnsw", {})
 
+    # Canonical DB path for persisting shadow snapshots
+    db_path = cfg.get("graph_store", {}).get("path", "data/archrag.db")
+
     return ArchRAGOrchestrator(
         llm=llm,
         embedding=embedding,
@@ -172,6 +175,7 @@ def build_orchestrator(config_path: str = "config.yaml") -> ArchRAGOrchestrator:
         doc_store=doc_store,
         vector_index=vector_index,
         clustering=clustering,
+        db_path=db_path,
         chunk_size=indexing_cfg.get("chunk_size", 1200),
         chunk_overlap=indexing_cfg.get("chunk_overlap", 100),
         max_levels=indexing_cfg.get("max_hierarchy_levels", 5),

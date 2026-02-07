@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from archrag.domain.models import Entity, KnowledgeGraph, Relation, TextChunk
@@ -56,44 +57,51 @@ class KGConstructionService:
         self._doc_store.save_chunks(chunks)
         log.info("Created %d chunks from %d documents", len(chunks), len(documents))
 
-        # 2. Extract entities & relations per chunk
+        # 2. Extract entities & relations per chunk (parallel)
         kg = KnowledgeGraph()
         name_to_entity: dict[str, Entity] = {}
 
-        for chunk in chunks:
-            extracted = self._extract(chunk)
-            for ent_data in extracted.get("entities", []):
-                name = ent_data.get("name", "").strip()
-                if not name:
-                    continue
-                key = name.lower()
-                if key in name_to_entity:
-                    # Merge descriptions
-                    existing = name_to_entity[key]
-                    if ent_data.get("description", ""):
-                        existing.description += " " + ent_data["description"]
-                    existing.source_chunk_ids.append(chunk.id)
-                else:
-                    entity = Entity(
-                        name=name,
-                        description=ent_data.get("description", ""),
-                        entity_type=ent_data.get("type", ""),
-                        source_chunk_ids=[chunk.id],
-                    )
-                    name_to_entity[key] = entity
-                    kg.add_entity(entity)
+        def _do_extract(chunk: TextChunk) -> tuple[TextChunk, dict]:
+            return chunk, self._extract(chunk)
 
-            for rel_data in extracted.get("relations", []):
-                src_name = rel_data.get("source", "").strip().lower()
-                tgt_name = rel_data.get("target", "").strip().lower()
-                if src_name in name_to_entity and tgt_name in name_to_entity:
-                    rel = Relation(
-                        source_id=name_to_entity[src_name].id,
-                        target_id=name_to_entity[tgt_name].id,
-                        description=rel_data.get("description", ""),
-                        source_chunk_ids=[chunk.id],
-                    )
-                    kg.add_relation(rel)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = [pool.submit(_do_extract, c) for c in chunks]
+            for i, fut in enumerate(as_completed(futures), 1):
+                chunk, extracted = fut.result()
+                if i % 10 == 0 or i == len(chunks):
+                    log.info("Extracted %d / %d chunks", i, len(chunks))
+                for ent_data in extracted.get("entities", []):
+                    name = ent_data.get("name", "").strip()
+                    if not name:
+                        continue
+                    key = name.lower()
+                    if key in name_to_entity:
+                        # Merge descriptions
+                        existing = name_to_entity[key]
+                        if ent_data.get("description", ""):
+                            existing.description += " " + ent_data["description"]
+                        existing.source_chunk_ids.append(chunk.id)
+                    else:
+                        entity = Entity(
+                            name=name,
+                            description=ent_data.get("description", ""),
+                            entity_type=ent_data.get("type", ""),
+                            source_chunk_ids=[chunk.id],
+                        )
+                        name_to_entity[key] = entity
+                        kg.add_entity(entity)
+
+                for rel_data in extracted.get("relations", []):
+                    src_name = rel_data.get("source", "").strip().lower()
+                    tgt_name = rel_data.get("target", "").strip().lower()
+                    if src_name in name_to_entity and tgt_name in name_to_entity:
+                        rel = Relation(
+                            source_id=name_to_entity[src_name].id,
+                            target_id=name_to_entity[tgt_name].id,
+                            description=rel_data.get("description", ""),
+                            source_chunk_ids=[chunk.id],
+                        )
+                        kg.add_relation(rel)
 
         # 3. Compute entity embeddings
         entity_list = list(kg.entities.values())

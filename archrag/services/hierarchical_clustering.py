@@ -8,6 +8,7 @@ build upper-level graph, repeat.  Produces a CommunityHierarchy.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -107,19 +108,21 @@ class HierarchicalClusteringService:
                 log.info("Single community at level %d — stopping", level)
                 break
 
-            # Step 4: Summarise each community via LLM
-            level_communities: list[Community] = []
-            for comm_member_ids in communities_ids:
-                member_texts = [current_nodes[mid].text for mid in comm_member_ids if mid in current_nodes]
+            # Step 4: Summarise each community via LLM (parallel)
+            def _summarise_and_embed(member_ids: list[str]) -> Community:
+                member_texts = [current_nodes[mid].text for mid in member_ids if mid in current_nodes]
                 summary = self._summarise(member_texts)
                 emb = self._embedding.embed(summary)
-                community = Community(
+                return Community(
                     level=level,
-                    member_ids=comm_member_ids,
+                    member_ids=member_ids,
                     summary=summary,
                     embedding=emb,
                 )
-                level_communities.append(community)
+
+            level_communities: list[Community] = []
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                level_communities = list(pool.map(_summarise_and_embed, communities_ids))
 
             hierarchy.levels.append(level_communities)
 

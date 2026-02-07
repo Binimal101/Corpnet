@@ -207,3 +207,9 @@ class SQLiteGraphStore(GraphStorePort):
         self._conn.backup(dst_conn)
         dst_conn.close()
         return SQLiteGraphStore(db_path=tmp_path)
+
+    def persist_to(self, db_path: str) -> None:
+        """Copy this store's data back to the canonical DB path."""
+        dst_conn = sqlite3.connect(db_path)
+        self._conn.backup(dst_conn)
+        dst_conn.close()
