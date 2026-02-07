@@ -29,21 +29,49 @@ export function OrgSettingsPage() {
   const [copied, setCopied] = useState(false)
   const [leaveError, setLeaveError] = useState('')
   const [isLeaving, setIsLeaving] = useState(false)
+  const [isLastOwner, setIsLastOwner] = useState(false)
 
-  // Load org details
+  // Load org details and check ownership status
   if (!loaded && org) {
-    supabase
-      .from('organizations')
-      .select('*')
-      .eq('id', org.org_id)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setOrgName(data.name)
-          setJoinSecret(data.join_secret || '')
-        }
-        setLoaded(true)
-      })
+    Promise.all([
+      supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', org.org_id)
+        .single(),
+      // Check if user is the last owner
+      supabase
+        .rpc('is_root_role_user', { 
+          target_user_id: user?.id, 
+          target_org_id: org.org_id 
+        })
+        .then(async ({ data: isRoot, error }) => {
+          if (!error && isRoot && user) {
+            // Count other root role members
+            const { data: rootRoles } = await supabase
+              .from('roles')
+              .select('id')
+              .eq('organization_id', org.org_id)
+              .is('parent_role_id', null)
+            
+            if (rootRoles && rootRoles.length > 0) {
+              const { data: rootMembers } = await supabase
+                .from('organization_members')
+                .select('user_id')
+                .eq('organization_id', org.org_id)
+                .in('role_id', rootRoles.map(r => r.id))
+              
+              setIsLastOwner(rootMembers ? rootMembers.length <= 1 : false)
+            }
+          }
+        })
+    ]).then(([{ data }]) => {
+      if (data) {
+        setOrgName(data.name)
+        setJoinSecret(data.join_secret || '')
+      }
+      setLoaded(true)
+    })
   }
 
   const handleSave = async () => {
@@ -70,20 +98,30 @@ export function OrgSettingsPage() {
     setIsLeaving(true)
     setLeaveError('')
 
-    const { error } = await supabase
-      .from('organization_members')
-      .delete()
-      .eq('organization_id', org.org_id)
-      .eq('user_id', user.id)
+    try {
+      // Check if user is the last root role member (owner) by attempting to delete
+      const { error } = await supabase
+        .from('organization_members')
+        .delete()
+        .eq('organization_id', org.org_id)
+        .eq('user_id', user.id)
 
-    if (error) {
-      setLeaveError(error.message)
+      if (error) {
+        if (error.message.includes('Cannot remove the last root role member')) {
+          setLeaveError('Cannot leave organization: You are the last owner. Please transfer ownership to another member or delete the organization.')
+        } else {
+          setLeaveError(error.message)
+        }
+        setIsLeaving(false)
+        return
+      }
+
+      await refreshClaims()
+      navigate('/onboarding', { replace: true })
+    } catch (error) {
+      setLeaveError('An unexpected error occurred while leaving the organization')
       setIsLeaving(false)
-      return
     }
-
-    await refreshClaims()
-    navigate('/onboarding', { replace: true })
   }
 
   if (!org) return null
@@ -175,9 +213,19 @@ export function OrgSettingsPage() {
           </div>
         )}
 
+        {isLastOwner && (
+          <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <strong>Notice:</strong> You are the last owner of this organization. You cannot leave until you transfer ownership to another member or delete the organization.
+          </div>
+        )}
+
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive" className="gap-2">
+            <Button 
+              variant="destructive" 
+              className="gap-2"
+              disabled={isLastOwner || isLeaving}
+            >
               <LogOut className="w-4 h-4" />
               Leave Organization
             </Button>
