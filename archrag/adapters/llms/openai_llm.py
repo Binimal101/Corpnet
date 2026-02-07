@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from archrag.ports.llm import LLMPort
+from archrag.ports.llm import LLMPort, ChatResponse
 
 
 class OpenAILLM(LLMPort):
@@ -43,3 +43,34 @@ class OpenAILLM(LLMPort):
         if start != -1 and end != -1:
             raw = raw[start : end + 1]
         return json.loads(raw)
+    
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ChatResponse:
+        """Chat with tool calling support."""
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,  # type: ignore[arg-type]
+            tools=tools,  # type: ignore[arg-type]
+            temperature=self._temperature,
+        )
+        
+        message = resp.choices[0].message
+        content = message.content or ""
+        
+        # Extract tool calls if any
+        tool_calls: list[dict[str, Any]] = []
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append({
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                })
+        
+        return ChatResponse(content=content, tool_calls=tool_calls)

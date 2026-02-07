@@ -121,8 +121,133 @@ def info(ctx: click.Context) -> None:
     click.echo(f"  Relations:        {st['relations']}")
     click.echo(f"  Chunks:           {st['chunks']}")
     click.echo(f"  Hierarchy levels: {st['hierarchy_levels']}")
+    click.echo(f"  Memory notes:     {st.get('memory_notes', 0)}")
     click.echo("\n=== Config ===")
     click.echo(_yaml.dump(cfg, default_flow_style=False))
+
+
+@main.command()
+@click.option("--no-llm", is_flag=True, help="Use guided prompts without LLM (form-based).")
+@click.option("--no-greeting", is_flag=True, help="Skip the greeting message.")
+@click.pass_context
+def agent(ctx: click.Context, no_llm: bool, no_greeting: bool) -> None:
+    """Interactive agent for guided data ingestion.
+    
+    The agent helps you:
+    - Connect to SQL/NoSQL databases
+    - Save connection details for future use
+    - Select which data to index
+    - Sync data to ArchRAG
+    - Query your indexed data
+    
+    Examples:
+        archrag agent                   # Full conversational agent
+        archrag agent --no-llm          # Form-based guided setup
+    """
+    from archrag.config import build_orchestrator
+    from archrag.agent.connection_store import ConnectionStore
+    from archrag.agent.ingestion_agent import IngestionAgent, GuidedSetup
+
+    orch = build_orchestrator(ctx.obj["config"])
+    store = ConnectionStore()
+
+    if no_llm:
+        # Use form-based guided setup
+        setup = GuidedSetup(orch, store)
+        setup.run()
+    else:
+        # Use full conversational agent
+        agent_instance = IngestionAgent(orch, orch._llm, store)
+        agent_instance.run_interactive(greeting=not no_greeting)
+
+
+@main.command()
+@click.pass_context
+def serve(ctx: click.Context) -> None:
+    """Start the MCP server for AI agent integration.
+    
+    This starts a local MCP server that can be connected to by
+    MCP-compatible clients like Claude Desktop or Cursor.
+    
+    The server runs on stdio transport by default.
+    
+    Examples:
+        archrag serve                   # Start MCP server
+        
+    To configure Claude Desktop, add to config.json:
+        {
+            "mcpServers": {
+                "archrag": {
+                    "command": "archrag",
+                    "args": ["serve"]
+                }
+            }
+        }
+    """
+    import os
+    os.environ.setdefault("ARCHRAG_CONFIG", ctx.obj["config"])
+    
+    from archrag.mcp_server import mcp
+    mcp.run(transport="stdio")
+
+
+@main.command()
+@click.pass_context
+def connections(ctx: click.Context) -> None:
+    """List saved database connections."""
+    from archrag.agent.connection_store import ConnectionStore
+
+    store = ConnectionStore()
+    conns = store.list_connections()
+
+    if not conns:
+        click.echo("No saved connections.")
+        click.echo("Use 'archrag agent' to connect a database and save it.")
+        return
+
+    click.echo(f"Saved connections ({len(conns)}):\n")
+    for conn in conns:
+        click.echo(f"  {conn.name} ({conn.connector_type})")
+        if conn.description:
+            click.echo(f"    Description: {conn.description}")
+        click.echo(f"    Tables: {', '.join(conn.tables) if conn.tables else 'not configured'}")
+        click.echo(f"    Last used: {conn.last_used_at or 'never'}")
+        click.echo(f"    Total syncs: {conn.total_syncs} ({conn.total_records_synced} records)")
+        click.echo()
+
+
+@main.command("connect")
+@click.argument("name")
+@click.pass_context
+def connect_saved(ctx: click.Context, name: str) -> None:
+    """Connect to a saved database by NAME and sync."""
+    from archrag.config import build_orchestrator
+    from archrag.agent.connection_store import ConnectionStore
+    from archrag.agent.tools import AgentTools
+
+    orch = build_orchestrator(ctx.obj["config"])
+    store = ConnectionStore()
+    tools = AgentTools(orch, store)
+
+    # Connect
+    result = tools.execute_tool("connect_database", {"saved_name": name})
+    if not result.success:
+        click.echo(f"❌ {result.message}")
+        return
+    
+    click.echo(f"✅ {result.message}")
+    
+    # Get saved connection to check for configured tables
+    conn = store.get_connection(name)
+    if conn and conn.tables:
+        click.echo(f"Syncing tables: {', '.join(conn.tables)}")
+        sync_result = tools.execute_tool("sync_database", {
+            "tables": conn.tables,
+            "incremental": True,
+        })
+        click.echo(f"{'✅' if sync_result.success else '❌'} {sync_result.message}")
+    else:
+        click.echo("No tables configured. Use 'archrag agent' to configure sync settings.")
 
 
 if __name__ == "__main__":

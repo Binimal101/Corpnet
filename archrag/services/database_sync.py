@@ -1,4 +1,8 @@
-"""Service for synchronizing external databases with ArchRAG."""
+"""Service for synchronizing external databases with ArchRAG.
+
+Uses the unified ingestion pipeline to ensure all database records
+flow through: MemoryNote → Chunks → KG → C-HNSW.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +19,9 @@ from archrag.domain.models import (
 )
 from archrag.ports.document_store import DocumentStorePort
 from archrag.ports.external_database import ExternalDatabaseConnectorPort
-from archrag.ports.memory_note_store import MemoryNoteStorePort
 
 if TYPE_CHECKING:
-    from archrag.services.note_construction import NoteConstructionService
+    from archrag.services.unified_ingestion import UnifiedIngestionPipeline
 
 log = logging.getLogger(__name__)
 
@@ -26,16 +29,19 @@ log = logging.getLogger(__name__)
 class DatabaseSyncService:
     """Orchestrates syncing data from external databases into ArchRAG.
 
+    Uses the unified ingestion pipeline to ensure all records flow through:
+        ExternalRecord → MemoryNote → TextChunks → KG → C-HNSW
+
     This service:
     - Manages incremental sync state per table
-    - Converts external records to MemoryNotes
+    - Routes records through the unified pipeline
     - Tracks sync progress and errors
     - Supports both full and incremental sync modes
 
     Usage:
         sync_service = DatabaseSyncService(
             connector=sql_connector,
-            note_service=note_construction_service,
+            ingestion_pipeline=unified_pipeline,
             doc_store=document_store,
         )
         result = sync_service.incremental_sync(tables=["users", "posts"])
@@ -46,9 +52,8 @@ class DatabaseSyncService:
     def __init__(
         self,
         connector: ExternalDatabaseConnectorPort,
-        note_service: "NoteConstructionService",
+        ingestion_pipeline: "UnifiedIngestionPipeline",
         doc_store: DocumentStorePort,
-        note_store: MemoryNoteStorePort,
         *,
         batch_size: int = 100,
         default_timestamp_column: str = "updated_at",
@@ -58,17 +63,15 @@ class DatabaseSyncService:
 
         Args:
             connector: External database connector.
-            note_service: Service for creating MemoryNotes from records.
+            ingestion_pipeline: Unified pipeline for Note → Chunk → KG processing.
             doc_store: Document store for persisting sync state.
-            note_store: Memory note store for saving notes.
             batch_size: Number of records to process per batch.
             default_timestamp_column: Default column for incremental timestamp sync.
             default_id_column: Default column for incremental ID sync.
         """
         self._connector = connector
-        self._note_service = note_service
+        self._ingestion_pipeline = ingestion_pipeline
         self._doc_store = doc_store
-        self._note_store = note_store
         self._batch_size = batch_size
         self._default_timestamp_column = default_timestamp_column
         self._default_id_column = default_id_column
@@ -336,24 +339,22 @@ class DatabaseSyncService:
         enable_linking: bool,
         enable_evolution: bool,
     ) -> None:
-        """Convert an external record to a MemoryNote and save it."""
+        """Process an external record through the unified ingestion pipeline.
+        
+        This ensures the record flows through:
+            ExternalRecord → MemoryNote → TextChunks → KG entities/relations
+        """
         if not record.text_content.strip():
             log.debug("Skipping record %s: empty text content", record.id)
             return
 
-        # Convert record to note input
-        note_input = record.to_note_input()
-
-        # Build note using the note construction service
-        note = self._note_service.build_note(
-            note_input,
+        # Use unified pipeline: Note → Chunks → KG
+        note = self._ingestion_pipeline.ingest_from_external_record(
+            record,
             enable_linking=enable_linking,
             enable_evolution=enable_evolution,
         )
-
-        # Save the note to the store
-        self._note_store.save_note(note)
-        log.debug("Saved memory note %s from record %s", note.id, record.id)
+        log.debug("Ingested record %s as note %s through unified pipeline", record.id, note.id)
 
     def _get_text_columns(
         self,

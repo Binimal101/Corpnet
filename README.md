@@ -4,6 +4,26 @@ An implementation of **ArchRAG: Attributed Community-based Hierarchical Retrieva
 
 Built with a **hexagonal / ports & adapters** architecture — every external dependency (LLM, embedding model, database, vector index, clustering algorithm) is behind an abstract port and can be swapped via config.
 
+## Unified Ingestion Pipeline
+
+**All data sources flow through the same pipeline**, regardless of input format:
+
+```
+Input (JSONL, JSON, SQL, MongoDB, API)
+  ↓
+MemoryNote (LLM enrichment: keywords, context, tags, links)
+  ↓
+TextChunks (split for entity extraction)
+  ↓
+Knowledge Graph (entities, relations)
+  ↓
+Community Hierarchy (Leiden clustering)
+  ↓
+C-HNSW Index (hierarchical vector search)
+```
+
+This ensures consistent treatment of all data and enables full hierarchical traversal for retrieval.
+
 ## Quick Start
 
 ### 1. Create the virtual environment
@@ -66,6 +86,11 @@ archrag query "What did Einstein win the Nobel Prize for?"
 | `archrag add <corpus>` | Add new documents to an existing index and re-index |
 | `archrag remove "<entity name>"` | Delete an entity and its relations from the KG |
 | `archrag info` | Show database stats and current configuration |
+| `archrag agent` | **Interactive agent for guided data ingestion** |
+| `archrag agent --no-llm` | Form-based guided setup (no LLM required) |
+| `archrag serve` | Start MCP server for AI client integration |
+| `archrag connections` | List saved database connections |
+| `archrag connect <name>` | Connect to a saved database and sync |
 
 Add `-v` for debug logging, `-c path/to/config.yaml` for a custom config:
 
@@ -73,184 +98,89 @@ Add `-v` for debug logging, `-c path/to/config.yaml` for a custom config:
 archrag -v -c my_config.yaml query "some question"
 ```
 
-## MCP Server (FastMCP)
+## Interactive Ingestion Agent
 
-ArchRAG exposes its full functionality via an MCP (Model Context Protocol) server for AI agent integration.
-
-### Running the MCP Server
+ArchRAG includes an interactive agent for guided data ingestion:
 
 ```bash
-# Run with stdio transport (for MCP clients)
-python -m archrag.mcp_server
+# Full conversational agent (requires LLM API key)
+archrag agent
 
-# Or use fastmcp CLI
-fastmcp run archrag/mcp_server.py:mcp
+# Form-based guided setup (no LLM required)
+archrag agent --no-llm
 ```
 
-### Environment Variables
+### Agent Features
 
-| Variable | Default | Description |
-|---|---|---|
-| `ARCHRAG_CONFIG` | `config.yaml` | Path to configuration file |
-| `ARCHRAG_FLUSH_INTERVAL` | `180` | Seconds between auto-flush of document queue |
+- **Saved Connections**: Save database connection details (credentials, tables, preferences) with friendly names like "people" or "sales_db"
+- **Automatic Reconnection**: Reference saved connections by name without re-entering credentials
+- **Persistent Preferences**: Table selections and sync settings are remembered across sessions
+- **Session History**: Conversation history is preserved for context
+- **Sync Statistics**: Track sync history and record counts per connection
 
-### MCP Tools Reference
+### Example Session
 
-#### Core RAG Tools
+```
+$ archrag agent
 
-| Tool | Description |
-|---|---|
-| `index(corpus_path)` | Build full index from a corpus file (JSONL/JSON) |
-| `query(question)` | Answer a question using hierarchical search + adaptive filtering |
-| `search(query_str, search_type)` | Search entities/chunks by substring (`entities`, `chunks`, or `all`) |
-| `add(documents)` | Enqueue documents for batched indexing (auto-flushes every 3 min) |
-| `remove(entity_name)` | Delete an entity and its relations from the knowledge graph |
-| `reindex()` | Immediately flush pending documents and rebuild index |
-| `info()` | Show database statistics and queue status |
+🤖 ArchRAG Ingestion Assistant
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#### MemoryNote Tools (A-Mem inspired)
+Welcome to ArchRAG! I'm your Ingestion Assistant.
+What would you like to do today?
 
-These tools implement the Zettelkasten-inspired memory system from the A-Mem paper:
+You: I want to index my people database
+Assistant: I found your 'people' connection from last week!
+Last sync: 2024-02-01, 1,234 records indexed.
 
-| Tool | Description |
-|---|---|
-| `add_note(content, category, tags, keywords, enable_linking, enable_evolution, add_to_kg)` | Add enriched memory note with LLM-generated metadata |
-| `get_note(note_id)` | Retrieve a memory note by ID |
-| `get_related_notes(note_id)` | Get notes linked to a given note |
-| `search_notes(query_str, k)` | Semantic search for notes by content similarity |
-| `delete_note(note_id)` | Delete a memory note |
+Should I sync new records now? (y/n)
 
-### MCP Tool Examples
+You: yes
 
-#### Adding a Memory Note
+Syncing... Found 47 new records since last sync.
+✅ Sync complete! 47 records added to the index.
 
-```python
-# Via MCP client
-result = await client.call_tool("add_note", {
-    "content": "The transformer architecture revolutionized NLP by using self-attention.",
-    "category": "technology",
-    "tags": ["AI", "deep learning"],
-    "enable_linking": True,
-    "enable_evolution": True
-})
-# Returns: Created note ID, auto-generated keywords, context, tags, and links
+You: quit
+
+Goodbye! Your session has been saved.
 ```
 
-#### Querying the Knowledge Graph
+## MCP Server
 
-```python
-result = await client.call_tool("query", {
-    "question": "What is the transformer architecture?"
-})
-# Returns: Answer generated using hierarchical search + adaptive filtering
-```
-
-#### Semantic Note Search
-
-```python
-result = await client.call_tool("search_notes", {
-    "query_str": "machine learning algorithms",
-    "k": 5
-})
-# Returns: Top 5 semantically similar notes
-```
-
-## Testing Memory Notes
-
-Sample data and a test script are provided:
+ArchRAG exposes its functionality via an MCP server for AI agent integration:
 
 ```bash
-# Run the memory notes test script
-python scripts/test_memory_notes.py
-
-# Sample notes are in archrag/dataset/sample_notes.json
+archrag serve
 ```
 
-The test script demonstrates:
-1. Adding notes with LLM enrichment
-2. Retrieving notes by ID
-3. Finding related notes via links
-4. Semantic search across notes
-5. Deleting notes
+Configure Claude Desktop or Cursor to connect:
+```json
+{
+  "mcpServers": {
+    "archrag": {
+      "command": "archrag",
+      "args": ["serve"]
+    }
+  }
+}
+```
 
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design document.
 
-```
-CLI (click) / MCP Server (FastMCP)
- │
- ▼
-Orchestrator
- ├── KG Construction Service
- ├── Hierarchical Clustering Service  (Algorithm 1)
- ├── C-HNSW Build Service             (Algorithm 3)
- ├── Hierarchical Search Service      (Algorithm 2)
- ├── Adaptive Filtering Service       (Equations 1 & 2)
- └── Note Construction Service        (A-Mem inspired)
-      │
-      ▼
-   7 Ports (ABCs)
-      │
-      ▼
-   Swappable Adapters
-```
-
-### Ports & Adapters
-
-| Port | Adapters |
-|---|---|
-| **EmbeddingPort** | SentenceTransformers, OpenAI, Ollama |
-| **LLMPort** | OpenAI, Ollama |
-| **GraphStorePort** | SQLite, In-Memory |
-| **DocumentStorePort** | SQLite, In-Memory |
-| **VectorIndexPort** | NumPy (brute-force cosine) |
-| **ClusteringPort** | Leiden (via igraph + leidenalg) |
-| **MemoryNoteStorePort** | SQLite |
-
-## Project Structure
-
-```
-archrag/
-├── domain/models.py          # Pure dataclasses (Entity, Relation, Community, MemoryNote, etc.)
-├── ports/                    # 7 abstract base classes
-│   └── memory_note_store.py  # MemoryNote persistence port
-├── adapters/
-│   ├── embeddings/           # SentenceTransformer, OpenAI, Ollama
-│   ├── llms/                 # OpenAI, Ollama
-│   ├── stores/               # SQLite & in-memory (graph + document + memory notes)
-│   │   └── sqlite_memory_note.py
-│   ├── indexes/              # NumPy vector index
-│   └── clustering/           # Leiden
-├── services/
-│   ├── orchestrator.py       # Main entry point
-│   ├── note_construction.py  # A-Mem inspired note enrichment
-│   └── ...                   # KG, clustering, C-HNSW, search, filtering
-├── prompts/
-│   ├── note_construction.py  # LLM prompts for note enrichment & linking
-│   └── ...                   # Extraction, summarization, filtering
-├── mcp_server.py             # FastMCP server with all tools
-├── config.py                 # YAML config + adapter factory + dotenv loading
-└── cli.py                    # Click CLI entry point
-scripts/
-└── test_memory_notes.py      # Test script for memory note functionality
-tests/                        # Unit tests with mock ports
-```
-
 ## Configuration
 
-Add these sections to your `config.yaml` for memory note settings:
+Add these sections to `config.yaml`:
 
 ```yaml
-# Memory note store configuration
 memory_note_store:
   adapter: sqlite
   path: data/archrag.db
 
-# Memory note construction settings
 memory:
-  k_nearest: 10           # Number of neighbors for link generation
-  enable_evolution: true  # Whether to evolve related notes on insert
+  k_nearest: 10
+  enable_evolution: true
 ```
 
 ## Tests

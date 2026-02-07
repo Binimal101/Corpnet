@@ -223,13 +223,18 @@ def add_note(
     keywords: list[str] | None = None,
     enable_linking: bool = True,
     enable_evolution: bool = True,
-    add_to_kg: bool = True,
+    skip_kg: bool = False,
+    rebuild_hierarchy: bool = False,
 ) -> str:
     """Add a structured memory note with LLM-generated metadata.
 
-    Unlike 'add' which takes raw documents for batched indexing,
-    this creates an enriched MemoryNote with:
+    Uses the unified pipeline to ensure consistent processing:
+        Input → MemoryNote → Chunks → KG entities/relations
+
+    Unlike 'add' which batches documents for later indexing,
+    this immediately creates an enriched MemoryNote with:
     - Auto-generated keywords, context, and tags
+    - TextChunks for entity/relation extraction
     - Links to semantically related memories
     - Optional evolution of related notes
 
@@ -240,7 +245,8 @@ def add_note(
         keywords: Optional list of user-provided keywords (merged with LLM-generated).
         enable_linking: Whether to find and link related notes (default: True).
         enable_evolution: Whether to update related notes (default: True).
-        add_to_kg: Whether to also add to knowledge graph (default: True).
+        skip_kg: If True, only create MemoryNote without KG extraction (default: False).
+        rebuild_hierarchy: Whether to rebuild clustering/C-HNSW after adding (default: False).
     """
     orch, _ = _get_orchestrator()
 
@@ -257,14 +263,16 @@ def add_note(
             input_data,
             enable_linking=enable_linking,
             enable_evolution=enable_evolution,
-            add_to_kg=add_to_kg,
+            skip_kg=skip_kg,
+            rebuild_hierarchy=rebuild_hierarchy,
         )
         return (
-            f"Created memory note {result['id']}.\n"
+            f"Created memory note {result['id']} (via unified pipeline).\n"
             f"Keywords: {result['keywords']}\n"
             f"Context: {result['context']}\n"
             f"Tags: {result['tags']}\n"
-            f"Links: {len(result['links'])} related notes"
+            f"Links: {len(result['links'])} related notes\n"
+            f"KG extraction: {'skipped' if skip_kg else 'completed'}"
         )
     except RuntimeError as e:
         return f"Error: {e}"
@@ -495,8 +503,12 @@ def sync_database(
 ) -> str:
     """Sync records from the connected database into ArchRAG.
 
-    Fetches records from the external database and converts them to
-    MemoryNotes with LLM-generated metadata, keywords, and links.
+    Uses the unified pipeline to ensure all records flow through:
+        Database Record → MemoryNote → TextChunks → KG entities/relations
+
+    This creates enriched MemoryNotes with LLM-generated metadata,
+    extracts entities and relations for the knowledge graph,
+    and enables full hierarchical traversal during queries.
 
     Args:
         tables: Specific tables to sync. If None, syncs all tables.

@@ -1,4 +1,8 @@
-"""Orchestrator: wires offline indexing and online retrieval pipelines."""
+"""Orchestrator: wires offline indexing and online retrieval pipelines.
+
+All data ingestion flows through the unified pipeline:
+    Input (any format) → MemoryNote → TextChunks → KG → Communities → C-HNSW
+"""
 
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ from archrag.services.hierarchical_clustering import HierarchicalClusteringServi
 from archrag.services.hierarchical_search import HierarchicalSearchService
 from archrag.services.kg_construction import KGConstructionService
 from archrag.services.note_construction import NoteConstructionService
+from archrag.services.unified_ingestion import UnifiedIngestionPipeline
 
 if TYPE_CHECKING:
     from archrag.services.database_sync import DatabaseSyncService
@@ -86,10 +91,26 @@ class ArchRAGOrchestrator:
 
         # Note construction service (if memory note store is provided)
         self._note_service: NoteConstructionService | None = None
+        self._unified_pipeline: UnifiedIngestionPipeline | None = None
+        
         if memory_note_store is not None:
             self._note_service = NoteConstructionService(
                 llm, embedding, memory_note_store,
                 k_nearest=note_k_nearest,
+                enable_evolution=note_enable_evolution,
+            )
+            
+            # Create unified ingestion pipeline
+            self._unified_pipeline = UnifiedIngestionPipeline(
+                llm=llm,
+                embedding=embedding,
+                graph_store=graph_store,
+                doc_store=doc_store,
+                note_store=memory_note_store,
+                note_service=self._note_service,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                enable_linking=True,
                 enable_evolution=note_enable_evolution,
             )
 
@@ -130,14 +151,13 @@ class ArchRAGOrchestrator:
 
         self._db_connector.connect(connection_config)
         
-        # Initialize sync service
-        if self._note_service is not None and self._memory_note_store is not None:
+        # Initialize sync service with unified pipeline
+        if self._unified_pipeline is not None:
             from archrag.services.database_sync import DatabaseSyncService
             self._db_sync_service = DatabaseSyncService(
                 connector=self._db_connector,
-                note_service=self._note_service,
+                ingestion_pipeline=self._unified_pipeline,
                 doc_store=self._doc_store,
-                note_store=self._memory_note_store,
             )
 
         tables = self._db_connector.list_tables()
@@ -462,13 +482,21 @@ class ArchRAGOrchestrator:
 
     # ── Offline indexing ──
 
-    def index(self, corpus_path: str) -> None:
+    def index(self, corpus_path: str, use_unified_pipeline: bool = True) -> None:
         """Run the full offline indexing pipeline.
 
-        1. Load corpus (JSONL)
-        2. KG construction
-        3. Hierarchical clustering
-        4. C-HNSW build
+        With unified pipeline (default):
+            1. Load corpus
+            2. For each doc: MemoryNote creation (LLM enrichment)
+            3. Chunk notes and extract KG
+            4. Hierarchical clustering
+            5. C-HNSW build
+
+        Without unified pipeline (legacy):
+            1. Load corpus
+            2. KG construction (direct chunking)
+            3. Hierarchical clustering
+            4. C-HNSW build
         """
         log.info("Starting offline indexing from %s", corpus_path)
 
@@ -476,8 +504,18 @@ class ArchRAGOrchestrator:
         documents = self._load_corpus(corpus_path)
         log.info("Loaded %d documents", len(documents))
 
-        # Phase 1: KG construction
-        kg = self._kg_service.build(documents)
+        if use_unified_pipeline and self._unified_pipeline is not None:
+            # Unified pipeline: All docs → MemoryNotes → Chunks → KG
+            log.info("Using unified ingestion pipeline (MemoryNote → Chunks → KG)")
+            notes = self._unified_pipeline.ingest_batch(documents)
+            log.info("Created %d MemoryNotes with KG entities", len(notes))
+            
+            # Get the full KG from graph store
+            kg = self._unified_pipeline.get_kg_from_notes()
+        else:
+            # Legacy direct KG construction
+            log.info("Using legacy KG construction (no MemoryNote layer)")
+            kg = self._kg_service.build(documents)
 
         # Phase 2: Hierarchical clustering
         hierarchy = self._cluster_service.build(kg)
@@ -515,28 +553,52 @@ class ArchRAGOrchestrator:
 
     # ── Add / Remove / Search ──
 
-    def add_documents(self, documents: list[dict[str, Any]]) -> None:
+    def add_documents(
+        self,
+        documents: list[dict[str, Any]],
+        *,
+        rebuild_hierarchy: bool = True,
+        use_unified_pipeline: bool = True,
+    ) -> list[MemoryNote]:
         """Add new documents to an existing index.
 
-        Runs KG extraction + embedding for the new docs, then rebuilds
-        the hierarchy and C-HNSW index from scratch.
+        With unified pipeline (default):
+            Each document → MemoryNote → Chunks → KG entities/relations
+            Then rebuilds hierarchy + C-HNSW
+
+        Args:
+            documents: List of dicts with 'text' or 'content' keys.
+            rebuild_hierarchy: Whether to rebuild clustering and C-HNSW.
+            use_unified_pipeline: Use MemoryNote layer (recommended).
+
+        Returns:
+            List of created MemoryNotes (empty if legacy mode).
         """
         log.info("Adding %d documents to existing index", len(documents))
+        notes: list[MemoryNote] = []
 
-        # Build KG for new docs (merges into existing store)
-        kg = self._kg_service.build(documents)
+        if use_unified_pipeline and self._unified_pipeline is not None:
+            # Unified pipeline: Docs → MemoryNotes → Chunks → KG
+            notes = self._unified_pipeline.ingest_batch(documents)
+            log.info("Created %d MemoryNotes through unified pipeline", len(notes))
+        else:
+            # Legacy: Direct KG construction
+            self._kg_service.build(documents)
 
-        # Rebuild hierarchy + C-HNSW over the full graph
-        all_entities = self._graph_store.get_all_entities()
-        full_kg = KnowledgeGraph()
-        for e in all_entities:
-            full_kg.add_entity(e)
-        for r in self._graph_store.get_all_relations():
-            full_kg.add_relation(r)
+        if rebuild_hierarchy:
+            # Rebuild hierarchy + C-HNSW over the full graph
+            all_entities = self._graph_store.get_all_entities()
+            full_kg = KnowledgeGraph()
+            for e in all_entities:
+                full_kg.add_entity(e)
+            for r in self._graph_store.get_all_relations():
+                full_kg.add_relation(r)
 
-        hierarchy = self._cluster_service.build(full_kg)
-        self._index = self._chnsw_service.build(hierarchy)
-        log.info("Re-indexed with new documents.")
+            hierarchy = self._cluster_service.build(full_kg)
+            self._index = self._chnsw_service.build(hierarchy)
+            log.info("Re-indexed with new documents.")
+
+        return notes
 
     def remove_entity(self, entity_name: str) -> bool:
         """Remove an entity by name and cascade-delete its relations.
@@ -600,40 +662,48 @@ class ArchRAGOrchestrator:
         input_data: dict[str, Any],
         enable_linking: bool = True,
         enable_evolution: bool | None = None,
-        add_to_kg: bool = True,
+        skip_kg: bool = False,
+        rebuild_hierarchy: bool = False,
     ) -> dict[str, Any]:
         """Add a structured memory note with LLM-generated enrichment.
 
-        This creates a MemoryNote with auto-generated keywords, context,
-        tags, and links to related memories (following the A-Mem design).
+        Uses the unified pipeline to ensure consistent processing:
+            Input → MemoryNote → Chunks → KG entities/relations
 
         Args:
             input_data: Dict with 'content' or 'text', optional 'category', 'tags'.
             enable_linking: Whether to find and link related notes.
             enable_evolution: Whether to update related notes.
-            add_to_kg: Whether to also add to the knowledge graph.
+            skip_kg: If True, only create MemoryNote without KG extraction.
+            rebuild_hierarchy: Whether to rebuild clustering/C-HNSW after adding.
 
         Returns:
             Dict with note ID and generated metadata.
         """
-        if self._note_service is None or self._memory_note_store is None:
+        if self._unified_pipeline is None:
             raise RuntimeError("MemoryNote system not configured")
 
-        # Build enriched note
-        note = self._note_service.build_note(
+        # Use unified pipeline: Input → Note → Chunks → KG
+        note = self._unified_pipeline.ingest_single(
             input_data,
             enable_linking=enable_linking,
             enable_evolution=enable_evolution,
+            skip_kg=skip_kg,
         )
+        log.info("Created memory note %s with %d links via unified pipeline", note.id, len(note.links))
 
-        # Save to note store
-        self._memory_note_store.save_note(note)
-        log.info("Created memory note %s with %d links", note.id, len(note.links))
+        # Optionally rebuild hierarchy (expensive, usually done in batch)
+        if rebuild_hierarchy:
+            all_entities = self._graph_store.get_all_entities()
+            full_kg = KnowledgeGraph()
+            for e in all_entities:
+                full_kg.add_entity(e)
+            for r in self._graph_store.get_all_relations():
+                full_kg.add_relation(r)
 
-        # Optionally add to KG pipeline
-        if add_to_kg:
-            doc = note.to_document()
-            self.add_documents([doc])
+            hierarchy = self._cluster_service.build(full_kg)
+            self._index = self._chnsw_service.build(hierarchy)
+            log.info("Rebuilt hierarchy after adding note.")
 
         return {
             "id": note.id,
