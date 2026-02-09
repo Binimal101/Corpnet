@@ -198,6 +198,10 @@ def create_app(
         allow_headers=["*"],
     )
     
+    # Include notes router
+    from archrag.api.notes_routes import router as notes_router
+    app.include_router(notes_router)
+    
     # ── Endpoints ────────────────────────────────────────────────────────────
     
     @app.get("/health")
